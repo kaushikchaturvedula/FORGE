@@ -1,0 +1,61 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Secrets — NEVER commit
+# ─────────────────────────────────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+credentials.json
+aliyun-credentials*
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Testing-only video clips (NOT Creative-Commons confirmed — keep out of repo
+# and out of the submitted demo; submission uses the CC BY 3.0 Wikimedia clip).
+# ─────────────────────────────────────────────────────────────────────────────
+datasets/*.mp4
+datasets/*.mov
+datasets/*.mkv
+datasets/*.webm
+datasets/*.ogv
+*.mp4
+*.mov
+*.mkv
+*.webm
+# Allow the submission-safe Wikimedia clip if explicitly placed here:
+!docs/assets/*.ogv
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Python
+# ─────────────────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+.coverage
+htmlcov/
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Node / frontend
+# ─────────────────────────────────────────────────────────────────────────────
+node_modules/
+frontend/dist/
+frontend/.vite/
+*.local
+npm-debug.log*
+yarn-error.log*
+
+# ─────────────────────────────────────────────────────────────────────────────
+# OS / editor
+# ─────────────────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp

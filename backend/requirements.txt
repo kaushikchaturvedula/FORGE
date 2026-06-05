@@ -1,0 +1,28 @@
+# ── FORGE backend dependencies ───────────────────────────────────────────────
+# Web / transport
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+websockets==14.1
+python-multipart==0.0.20
+
+# Config
+python-dotenv==1.0.1
+pydantic==2.10.4
+pydantic-settings==2.7.1
+
+# Qwen Cloud — DashScope realtime omni + AgentScope (connector/optics)
+dashscope==1.23.9
+agentscope==2.0.0
+
+# Alibaba Cloud — OSS object storage (deployment proof)
+oss2==2.19.1
+
+# Data handling
+# (catalogs are parsed from CSV/JSON with the stdlib csv/json modules — no pandas
+#  needed at runtime; keep the image footprint small)
+
+# ── Test / dev only ──────────────────────────────────────────────────────────
+pytest==8.3.4
+pytest-asyncio==0.25.0
+jsonschema==4.23.0
+httpx==0.28.1
