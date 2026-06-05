@@ -71,6 +71,28 @@ def test_session_update_flattens_tools():
     assert upd["session"]["turn_detection"]["type"] == "server_vad"
 
 
+def test_session_update_matches_live_protocol():
+    upd = ev.session_update(instructions="hi", tools=[], voice="Cherry")
+    s = upd["session"]
+    # Audio format on the wire is "pcm" (NOT the OpenAI "pcm16").
+    assert s["input_audio_format"] == "pcm"
+    assert s["output_audio_format"] == "pcm"
+    # server_vad object carries threshold + silence_duration_ms, and NOT create_response.
+    td = s["turn_detection"]
+    assert td["type"] == "server_vad"
+    assert "threshold" in td and "silence_duration_ms" in td
+    assert "create_response" not in td
+    assert s["input_audio_transcription"] == {"model": "gummy-realtime-v1"}
+    assert s["modalities"] == ["text", "audio"]
+    # No tools advertised when none are passed.
+    assert "tools" not in s
+
+
+def test_session_update_vad_type_override():
+    upd = ev.session_update(instructions="hi", tools=[], voice="Ethan", vad_type="semantic_vad")
+    assert upd["session"]["turn_detection"]["type"] == "semantic_vad"
+
+
 def test_function_call_output_builder_round_trips():
     out = ev.function_call_output("call_9", {"torque_nm": 12})
     assert out["item"]["type"] == "function_call_output"

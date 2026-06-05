@@ -45,6 +45,7 @@ class QwenRealtimeSession:
             )
         headers = {"Authorization": f"Bearer {self.settings.dashscope_api_key}"}
         logger.info("connecting realtime session: %s", self.settings.realtime_ws_url)
+        self._audio_sent = False  # reset the image-after-audio guard on (re)connect
         # `additional_headers` (websockets >= 14); falls back to `extra_headers`.
         try:
             self._ws = await websockets.connect(
@@ -89,7 +90,7 @@ class QwenRealtimeSession:
                 instructions=instructions,
                 tools=tools,
                 voice=voice or self.settings.voice,
-                output_sample_rate=self.settings.output_sample_rate,
+                vad_type=self.settings.vad_type,
                 enable_vad=enable_vad,
             )
         )

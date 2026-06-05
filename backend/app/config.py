@@ -34,7 +34,11 @@ class Settings(BaseSettings):
     )
     voice: str = Field(default="Cherry", alias="FORGE_VOICE")
 
-    # Audio formats (Qwen-Omni-Realtime: input 16 kHz, output 24 kHz PCM16 mono).
+    # Turn detection: "server_vad" (broadly supported) or "semantic_vad" (qwen3.5+).
+    vad_type: str = Field(default="server_vad", alias="FORGE_VAD_TYPE")
+
+    # Audio formats (Qwen-Omni-Realtime: input 16 kHz, output 24 kHz PCM16 mono;
+    # the wire format value is "pcm").
     input_sample_rate: int = 16000
     output_sample_rate: int = 24000
 

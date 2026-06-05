@@ -5,19 +5,22 @@ Per connection, two concurrent tasks run against a single realtime session:
   * ``_upstream``   — browser -> Qwen: buffers ~100 ms of 16 kHz PCM and forwards it;
     forwards JPEG field-vision frames ONLY while vision is active (token control).
   * ``_downstream`` — Qwen -> browser: streams output audio (24 kHz), input+output
-    transcripts, agent routing, panel updates, alerts, and drives tool calls through
-    the orchestrator.
+    transcripts, agent routing, panel updates, alerts, and drives tool calls.
+
+Connection is LAZY: the Qwen session is opened only when the technician actually starts
+talking (or streaming vision), and reopened on the next utterance after it closes. This
+is what a voice app should do — an idle browser must not pin an idle model session, and
+the DashScope realtime endpoint closes an idle session (~60 s "Response timeout"), so
+eager-connect-and-resume would storm. Carried-over context is re-injected on reconnect,
+which also covers the ~120-minute hard session cap.
 
 Robustness (all required, all here):
-  * tool-call de-duplication — a 4 s cache keyed by name+args (the realtime API can
-    emit duplicate function-call events milliseconds apart);
+  * tool-call de-duplication — a 4 s cache keyed by name+args;
   * FIRST_EXCEPTION teardown — the two tasks are joined with FIRST_EXCEPTION (never
-    FIRST_COMPLETED, which would kill multi-turn sessions after the first turn); the
-    downstream task re-raises after notifying the browser so the client reconnects;
-  * session resumption — the realtime session auto-closes near 120 min; the downstream
-    loop transparently re-establishes it with a compressed context summary;
-  * barge-in — a server speech-started event tells the browser to drain its playback
-    queue immediately.
+    FIRST_COMPLETED, which kills multi-turn sessions); the downstream task re-raises on
+    fatal errors so the client reconnects;
+  * session resumption — reconnect re-injects a compressed context summary;
+  * barge-in — a server speech-started event tells the browser to drain its playback.
 """
 
 from __future__ import annotations
@@ -41,6 +44,7 @@ logger = logging.getLogger("forge.gateway")
 
 AUDIO_FLUSH_BYTES = 3200  # ~100 ms of 16 kHz mono PCM16
 DEDUP_WINDOW_S = 4.0
+MAX_CONNECT_FAILURES = 5
 
 
 def build_resume_summary(state: SessionState) -> str:
@@ -66,7 +70,6 @@ class _DedupCache:
         self._seen: dict[str, float] = {}
 
     def is_duplicate(self, key: str, now: float) -> bool:
-        # prune
         self._seen = {k: t for k, t in self._seen.items() if now - t < self.window}
         if key in self._seen:
             return True
@@ -83,23 +86,32 @@ class RealtimeBridge:
         self.dedup = _DedupCache()
         self._closing = False
         self._connected_at = 0.0
+        self._had_activity = False
+        self._connect_failures = 0
+        self._want_session = asyncio.Event()
+        self._connect_lock = asyncio.Lock()
 
     # ── lifecycle ────────────────────────────────────────────────────────────
     async def run(self) -> None:
         await self.ws.accept()
-        try:
-            await self._open_session(initial=True)
-        except Exception as exc:  # noqa: BLE001 — surface a clean error to the browser
-            logger.exception("failed to open realtime session")
-            await self._safe_send_json(protocol.error(f"Could not start the realtime session: {exc}"))
-            await self.ws.close()
-            return
+        agent = self.orch.active_agent
+        from app.agents.specialists import AGENTS
+
+        await self._safe_send_json(
+            protocol.hello(agent, AGENTS[agent].display, self.orch.state.asset_id, self.settings.session_resume_after_seconds)
+        )
+        await self._safe_send_json(protocol.state("listening", self.settings.session_resume_after_seconds))
+        if not self.settings.realtime_configured:
+            await self._safe_send_json(
+                protocol.error("DASHSCOPE_API_KEY is not set — add it to backend/.env to enable the voice loop.")
+            )
 
         up = asyncio.create_task(self._upstream(), name="forge-upstream")
         down = asyncio.create_task(self._downstream(), name="forge-downstream")
         done, pending = await asyncio.wait({up, down}, return_when=asyncio.FIRST_EXCEPTION)
 
         self._closing = True
+        self._want_session.set()  # unblock a parked downstream so it can exit
         for task in pending:
             task.cancel()
         await asyncio.gather(*pending, return_exceptions=True)
@@ -110,33 +122,31 @@ class RealtimeBridge:
         await self.session.close()
         await self._safe_close()
 
-    async def _open_session(self, *, initial: bool) -> None:
-        await self.session.connect()
-        instructions, tools = self.orch.initial_config()
-        await self.session.update_session(instructions=instructions, tools=tools)
-        self._connected_at = time.monotonic()
-        if initial:
-            agent = self.orch.active_agent
-            from app.agents.specialists import AGENTS
-
-            await self._safe_send_json(
-                protocol.hello(agent, AGENTS[agent].display, self.orch.state.asset_id, self.settings.session_resume_after_seconds)
-            )
-            await self._safe_send_json(protocol.state("listening", self.settings.session_resume_after_seconds))
-
-    async def _resume(self) -> None:
-        """Re-establish the realtime session with a compressed context summary."""
-        logger.info("resuming realtime session")
-        await self.session.close()
-        self.session = QwenRealtimeSession(self.settings)
-        await self.session.connect()
-        instructions, tools = self.orch.initial_config()
-        summary = build_resume_summary(self.orch.state)
-        await self.session.update_session(
-            instructions=instructions + "\n\nCONTEXT CARRIED OVER:\n" + summary, tools=tools
-        )
-        self._connected_at = time.monotonic()
-        await self._safe_send_json(protocol.state("listening", self.settings.session_resume_after_seconds))
+    async def _ensure_session(self) -> bool:
+        """Open the realtime session if needed (idempotent). Returns connected."""
+        if self.session.connected:
+            return True
+        async with self._connect_lock:
+            if self.session.connected:
+                return True
+            try:
+                await self.session.connect()
+            except Exception as exc:  # noqa: BLE001
+                self._connect_failures += 1
+                logger.warning("realtime connect failed (%d): %r", self._connect_failures, exc)
+                await self._safe_send_json(
+                    protocol.error("Could not reach the realtime model — check DASHSCOPE_API_KEY / region.")
+                )
+                return False
+            instructions, tools = self.orch.initial_config()
+            if self._had_activity:
+                instructions = instructions + "\n\nCONTEXT CARRIED OVER:\n" + build_resume_summary(self.orch.state)
+            await self.session.update_session(instructions=instructions, tools=tools)
+            self._connected_at = time.monotonic()
+            self._connect_failures = 0
+            logger.info("realtime session ready (agent=%s)", self.orch.active_agent)
+            await self._safe_send_json(protocol.state("listening", self._remaining()))
+            return True
 
     # ── upstream: browser -> Qwen ────────────────────────────────────────────
     async def _upstream(self) -> None:
@@ -151,7 +161,7 @@ class RealtimeBridge:
                 if data is not None:
                     buf.extend(data)
                     if len(buf) >= AUDIO_FLUSH_BYTES:
-                        await self.session.append_audio(bytes(buf))
+                        await self._send_audio(bytes(buf))
                         buf.clear()
                     continue
 
@@ -161,6 +171,16 @@ class RealtimeBridge:
         except WebSocketDisconnect:
             self._closing = True
             raise
+
+    async def _send_audio(self, pcm: bytes) -> None:
+        # Talking is what triggers (and keeps) the session — connect lazily here.
+        self._want_session.set()
+        if not await self._ensure_session():
+            return
+        try:
+            await self.session.append_audio(pcm)
+        except Exception as exc:  # session may have just closed; downstream will reopen
+            logger.debug("append_audio dropped: %r", exc)
 
     async def _handle_client_json(self, text: str) -> None:
         try:
@@ -175,18 +195,33 @@ class RealtimeBridge:
                     jpeg = base64.b64decode(payload["jpeg_b64"])
                 except (ValueError, TypeError):
                     return
-                await self.session.append_image(jpeg)
+                self._want_session.set()
+                if await self._ensure_session():
+                    try:
+                        await self.session.append_image(jpeg)
+                    except Exception as exc:  # noqa: BLE001
+                        logger.debug("append_image dropped: %r", exc)
         elif kind == protocol.CONTROL:
-            action = payload.get("action")
-            if action == "barge_in":
-                await self.session.cancel_response()
+            if payload.get("action") == "barge_in" and self.session.connected:
+                try:
+                    await self.session.cancel_response()
+                except Exception as exc:  # noqa: BLE001
+                    logger.debug("cancel_response: %r", exc)
 
-    # ── downstream: Qwen -> browser (with resumption) ────────────────────────
+    # ── downstream: Qwen -> browser (lazy connect + resume) ──────────────────
     async def _downstream(self) -> None:
-        fast_drops = 0
         try:
             while not self._closing:
-                clean_end = True
+                await self._want_session.wait()
+                if self._closing:
+                    break
+                if not await self._ensure_session():
+                    if self._connect_failures > MAX_CONNECT_FAILURES:
+                        raise RuntimeError("realtime session unavailable")
+                    self._want_session.clear()
+                    await asyncio.sleep(min(8.0, 1.5 * self._connect_failures))
+                    continue
+
                 try:
                     async for evt in self.session.events():
                         await self._handle_server_event(evt)
@@ -194,32 +229,19 @@ class RealtimeBridge:
                             break
                 except WebSocketDisconnect:
                     raise
-                except Exception as exc:  # connection dropped / closed by server
+                except Exception as exc:  # noqa: BLE001 — server closed / idle timeout
                     logger.info("realtime stream ended: %r", exc)
-                    clean_end = False
 
-                if self._closing:
-                    break
-
-                # The stream ended. Either it's the ~120-min auto-close (resume with
-                # carried-over context) or an unexpected drop. Guard against a hot
-                # reconnect loop: too many drops in quick succession tears down so the
-                # client reconnects fresh.
-                elapsed = time.monotonic() - self._connected_at
-                if elapsed < 5.0 and not clean_end:
-                    fast_drops += 1
-                    if fast_drops > 3:
-                        raise RuntimeError("realtime session keeps dropping")
-                    await asyncio.sleep(min(2.0, 0.5 * fast_drops))
-                else:
-                    fast_drops = 0
-                await self._resume()
+                # The session ended (idle-close, ~120 min cap, or error). Drop it and
+                # park until the next utterance reopens it — no reconnect storm.
+                self._had_activity = True
+                await self.session.close()
+                self._want_session.clear()
+                await self._safe_send_json(protocol.state("listening", self._remaining()))
         except WebSocketDisconnect:
             self._closing = True
             raise
         except Exception:
-            # Notify the browser, then RE-RAISE so FIRST_EXCEPTION tears the bridge
-            # down cleanly and the client auto-reconnects (never swallow this).
             await self._safe_send_json(protocol.error("Realtime stream error; reconnecting."))
             raise
 
@@ -236,8 +258,7 @@ class RealtimeBridge:
         elif isinstance(evt, events.InputTranscriptDone):
             await self._safe_send_json(protocol.transcript("user", text=evt.text, final=True))
         elif isinstance(evt, events.SpeechStarted):
-            # Barge-in: tell the browser to drain playback immediately.
-            await self._safe_send_json(protocol.interrupted())
+            await self._safe_send_json(protocol.interrupted())  # barge-in: drain playback
             await self._safe_send_json(protocol.state("listening"))
         elif isinstance(evt, events.SpeechStopped):
             await self._safe_send_json(protocol.state("thinking"))
@@ -248,8 +269,10 @@ class RealtimeBridge:
         elif isinstance(evt, events.FunctionCallDone):
             await self._handle_tool_call(evt)
         elif isinstance(evt, events.RealtimeError):
-            logger.warning("realtime error: %s", evt.message)
+            logger.warning("realtime error: %s (code=%s)", evt.message, evt.code)
             await self._safe_send_json(protocol.error(evt.message))
+        elif isinstance(evt, events.UnknownEvent):
+            logger.debug("unhandled realtime event: %s", evt.type)
 
     # ── tool calls ───────────────────────────────────────────────────────────
     async def _handle_tool_call(self, call: events.FunctionCallDone) -> None:
@@ -262,15 +285,12 @@ class RealtimeBridge:
         t0 = time.monotonic()
         outcome = self.orch.process_tool_call(call.name, call.arguments)
 
-        # Transfer: swap the active agent's instructions + tools on the live session.
-        if outcome.session_update is not None:
+        if outcome.session_update is not None:  # transfer: swap the active agent
             instructions, tools = outcome.session_update
             await self.session.update_session(instructions=instructions, tools=tools)
 
-        # Return the grounded result to the model (it then continues speaking).
         await self.session.send_function_result(call.call_id, outcome.model_output)
 
-        # Forward all browser-facing effects (panels, alerts, logs, routing, control).
         for msg in outcome.frontend:
             await self._safe_send_json(msg)
 
@@ -281,6 +301,8 @@ class RealtimeBridge:
 
     # ── helpers ──────────────────────────────────────────────────────────────
     def _remaining(self) -> int:
+        if not self.session.connected:
+            return self.settings.session_resume_after_seconds
         return max(0, int(self.settings.session_resume_after_seconds - (time.monotonic() - self._connected_at)))
 
     async def _safe_send_json(self, message: dict) -> None:

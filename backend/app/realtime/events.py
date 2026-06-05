@@ -213,28 +213,36 @@ def session_update(
     instructions: str,
     tools: list[dict[str, Any]],
     voice: str,
-    output_sample_rate: int = 24000,
+    vad_type: str = "server_vad",
     enable_vad: bool = True,
 ) -> dict[str, Any]:
     """Build a session.update. Swapping instructions+tools here is how FORGE
-    'transfers' between its logical agents on one session."""
+    'transfers' between its logical agents on one session.
+
+    Field values match the live DashScope realtime spec: audio format is "pcm"
+    (input 16 kHz, output 24 kHz, mono 16-bit), and turn_detection is a server-VAD
+    object with threshold + silence_duration_ms (server VAD auto-creates the response
+    on end-of-speech — no response.create needed)."""
     turn_detection = (
-        {"type": "server_vad", "create_response": True} if enable_vad else None
+        {"type": vad_type, "threshold": 0.5, "silence_duration_ms": 800}
+        if enable_vad
+        else None
     )
-    return {
-        "type": "session.update",
-        "session": {
-            "modalities": ["text", "audio"],
-            "voice": voice,
-            "instructions": instructions,
-            "input_audio_format": "pcm16",
-            "output_audio_format": "pcm16",
-            "input_audio_transcription": {"model": "gummy-realtime-v1"},
-            "turn_detection": turn_detection,
-            "tools": [_flatten_tool(t) for t in tools],
-            "tool_choice": "auto",
-        },
+    session: dict[str, Any] = {
+        "modalities": ["text", "audio"],
+        "voice": voice,
+        "instructions": instructions,
+        "input_audio_format": "pcm",
+        "output_audio_format": "pcm",
+        "input_audio_transcription": {"model": "gummy-realtime-v1"},
+        "turn_detection": turn_detection,
     }
+    # Only advertise tools when present — avoids sending an empty/odd tools field.
+    flat = [_flatten_tool(t) for t in tools]
+    if flat:
+        session["tools"] = flat
+        session["tool_choice"] = "auto"
+    return {"type": "session.update", "session": session}
 
 
 def _flatten_tool(tool: dict[str, Any]) -> dict[str, Any]:

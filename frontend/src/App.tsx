@@ -25,7 +25,7 @@ const ACCENTS: Record<string, string> = {
 export default function App() {
   const [config, setConfig] = useState<RuntimeConfig | null>(null);
   const [configError, setConfigError] = useState<string | null>(null);
-  const { state, connect, toggleMic, registerFrameProvider, registerScreenProvider, bargeIn, micActive } = useRealtimeSocket(config);
+  const { state, connect, toggleMic, registerFrameProvider, registerScreenProvider, bargeIn, micActive, manualVision, setManualVision, visionStreaming } = useRealtimeSocket(config);
 
   useEffect(() => {
     fetchConfig().then(setConfig).catch((e) => setConfigError(String(e)));
@@ -41,7 +41,8 @@ export default function App() {
     return "";
   }, [state.lines, state.partialAssistant]);
 
-  const visiblePanels = PANEL_ORDER.filter((p) => state.visible[p]);
+  const visible: Record<string, boolean> = { ...state.visible, vision: state.visible.vision || manualVision };
+  const visiblePanels = PANEL_ORDER.filter((p) => visible[p]);
 
   return (
     <div className="flex h-screen flex-col bg-forge-bg text-forge-text">
@@ -53,6 +54,8 @@ export default function App() {
         assetId={config?.asset_id || "PL45LM-01"}
         onToggleMic={() => void toggleMic()}
         onBargeIn={bargeIn}
+        visionOn={manualVision}
+        onToggleVision={() => setManualVision((v) => !v)}
       />
 
       <div className="relative flex min-h-0 flex-1">
@@ -106,7 +109,7 @@ export default function App() {
       case "vision":
         return (
           <FieldVisionPanel
-            active={state.visionActive}
+            active={visionStreaming}
             width={config?.vision.width ?? 320}
             height={config?.vision.height ?? 240}
             screen={config?.vision.screen ?? { width: 768, height: 768 }}

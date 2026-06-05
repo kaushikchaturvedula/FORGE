@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useReducer, useRef } from "react";
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from "react";
 import { AudioPlayer } from "../audio/player";
 import { MicRecorder } from "../audio/recorder";
 import {
@@ -135,6 +135,9 @@ export type FrameProvider = () => string | null; // returns base64 JPEG, no data
 
 export function useRealtimeSocket(config: RuntimeConfig | null) {
   const [state, dispatch] = useReducer(reducer, initial);
+  // Manual vision override: lets you preview/stream a camera or a loaded video file
+  // for testing without first issuing the "what do you see?" voice command.
+  const [manualVision, setManualVision] = useState(false);
   const ws = useRef<WebSocket | null>(null);
   const player = useRef<AudioPlayer | null>(null);
   const recorder = useRef<MicRecorder | null>(null);
@@ -219,13 +222,16 @@ export function useRealtimeSocket(config: RuntimeConfig | null) {
   }, []);
 
   const bargeIn = useCallback(() => {
+    const wasSpeaking = player.current?.speaking ?? false;
     player.current?.drain();
-    send({ type: "control", action: "barge_in" });
+    // Only cancel a response that's actually playing (avoids a "no active response" warning).
+    if (wasSpeaking) send({ type: "control", action: "barge_in" });
   }, [send]);
 
-  // 1 fps vision frame sender, gated on visionActive.
+  // 1 fps vision frame sender, gated on the agent's vision state OR the manual override.
+  const visionStreaming = state.visionActive || manualVision;
   useEffect(() => {
-    if (!state.visionActive || !config) return;
+    if (!visionStreaming || !config) return;
     const period = Math.max(250, Math.round(1000 / config.vision.fps));
     const id = window.setInterval(() => {
       const frame = frameProvider.current?.();
@@ -235,7 +241,7 @@ export function useRealtimeSocket(config: RuntimeConfig | null) {
       if (screen) send({ type: "image", jpeg_b64: screen });
     }, period);
     return () => window.clearInterval(id);
-  }, [state.visionActive, config, send]);
+  }, [visionStreaming, config, send]);
 
   // session countdown
   useEffect(() => {
@@ -248,7 +254,7 @@ export function useRealtimeSocket(config: RuntimeConfig | null) {
 
   const micActive = micOn.current;
   return useMemo(
-    () => ({ state, connect, disconnect, toggleMic, registerFrameProvider, registerScreenProvider, bargeIn, micActive }),
-    [state, connect, disconnect, toggleMic, registerFrameProvider, registerScreenProvider, bargeIn, micActive],
+    () => ({ state, connect, disconnect, toggleMic, registerFrameProvider, registerScreenProvider, bargeIn, micActive, manualVision, setManualVision, visionStreaming }),
+    [state, connect, disconnect, toggleMic, registerFrameProvider, registerScreenProvider, bargeIn, micActive, manualVision, visionStreaming],
   );
 }

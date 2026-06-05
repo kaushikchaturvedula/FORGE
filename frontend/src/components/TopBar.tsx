@@ -15,6 +15,8 @@ export function TopBar({
   assetId,
   onToggleMic,
   onBargeIn,
+  visionOn,
+  onToggleVision,
 }: {
   conn: ConnState;
   conv: ConvState;
@@ -23,6 +25,8 @@ export function TopBar({
   assetId: string;
   onToggleMic: () => void;
   onBargeIn: () => void;
+  visionOn: boolean;
+  onToggleVision: () => void;
 }) {
   return (
     <header className="flex items-center justify-between border-b border-forge-edge bg-forge-panel px-4 py-2">
@@ -52,6 +56,14 @@ export function TopBar({
           <span className={`h-2 w-2 rounded-full ${conn === "connected" ? "bg-forge-live" : conn === "connecting" ? "bg-forge-warn" : "bg-forge-alert"}`} />
           <span className="text-forge-muted">{conn}</span>
         </div>
+
+        <button
+          onClick={onToggleVision}
+          className={`rounded px-2 py-1 text-xs ${visionOn ? "bg-forge-vision text-black" : "border border-forge-edge text-forge-muted hover:text-forge-text"}`}
+          title="Open the field-vision feed and pick a camera or load a video file"
+        >
+          👁 Vision
+        </button>
 
         <button
           onClick={onBargeIn}
