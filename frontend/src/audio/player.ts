@@ -13,7 +13,9 @@ export class AudioPlayer {
 
   private ensure(): AudioContext {
     if (!this.ctx) {
-      this.ctx = new AudioContext({ sampleRate: this.sampleRate });
+      // Default-rate context (Safari/iOS rejects a forced non-hardware sampleRate);
+      // each buffer is created at the PCM's 24 kHz rate, so Web Audio resamples.
+      this.ctx = new AudioContext();
       this.gain = this.ctx.createGain();
       this.gain.connect(this.ctx.destination);
       this.playhead = this.ctx.currentTime;

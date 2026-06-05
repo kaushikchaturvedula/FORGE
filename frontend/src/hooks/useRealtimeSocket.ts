@@ -53,6 +53,7 @@ const initial: State = {
 type Action =
   | { k: "conn"; v: ConnState }
   | { k: "msg"; m: ServerMessage }
+  | { k: "error"; v: string | null }
   | { k: "tick" }
   | { k: "reset" };
 
@@ -62,6 +63,8 @@ function reducer(s: State, a: Action): State {
   switch (a.k) {
     case "conn":
       return { ...s, conn: a.v };
+    case "error":
+      return { ...s, error: a.v };
     case "tick":
       return { ...s, sessionRemaining: Math.max(0, s.sessionRemaining - 1) };
     case "reset":
@@ -138,6 +141,7 @@ export function useRealtimeSocket(config: RuntimeConfig | null) {
   // Manual vision override: lets you preview/stream a camera or a loaded video file
   // for testing without first issuing the "what do you see?" voice command.
   const [manualVision, setManualVision] = useState(false);
+  const [micActive, setMicActive] = useState(false);
   const ws = useRef<WebSocket | null>(null);
   const player = useRef<AudioPlayer | null>(null);
   const recorder = useRef<MicRecorder | null>(null);
@@ -187,6 +191,7 @@ export function useRealtimeSocket(config: RuntimeConfig | null) {
     recorder.current?.stop();
     recorder.current = null;
     micOn.current = false;
+    setMicActive(false);
     ws.current?.close();
     ws.current = null;
     player.current?.close();
@@ -200,18 +205,37 @@ export function useRealtimeSocket(config: RuntimeConfig | null) {
       recorder.current?.stop();
       recorder.current = null;
       micOn.current = false;
+      setMicActive(false);
       dispatch({ k: "msg", m: { type: "state", status: "idle" } });
       return;
     }
-    await player.current?.resume(); // unlock audio on the user gesture
-    const rec = new MicRecorder();
-    await rec.start(config.input_sample_rate, (pcm) => {
-      if (ws.current?.readyState === WebSocket.OPEN) ws.current.send(pcm);
-    });
-    recorder.current = rec;
-    micOn.current = true;
-    dispatch({ k: "msg", m: { type: "state", status: "listening" } });
+    try {
+      await player.current?.resume(); // unlock playback on the user gesture
+      const rec = new MicRecorder();
+      let frames = 0;
+      await rec.start(config.input_sample_rate, (pcm) => {
+        if (ws.current?.readyState === WebSocket.OPEN) {
+          ws.current.send(pcm);
+          if (frames++ === 0) console.info("[FORGE] mic capturing →", rec.mode);
+        }
+      });
+      recorder.current = rec;
+      micOn.current = true;
+      setMicActive(true);
+      dispatch({ k: "error", v: null });
+      dispatch({ k: "msg", m: { type: "state", status: "listening" } });
+      console.info("[FORGE] mic started (mode=%s)", rec.mode);
+    } catch (e) {
+      console.error("[FORGE] mic start failed:", e);
+      recorder.current?.stop();
+      recorder.current = null;
+      micOn.current = false;
+      setMicActive(false);
+      dispatch({ k: "error", v: `Microphone: ${(e as Error).message}` });
+    }
   }, [config]);
+
+  const clearError = useCallback(() => dispatch({ k: "error", v: null }), []);
 
   const registerFrameProvider = useCallback((fn: FrameProvider | null) => {
     frameProvider.current = fn;
@@ -252,9 +276,8 @@ export function useRealtimeSocket(config: RuntimeConfig | null) {
 
   useEffect(() => () => disconnect(), [disconnect]);
 
-  const micActive = micOn.current;
   return useMemo(
-    () => ({ state, connect, disconnect, toggleMic, registerFrameProvider, registerScreenProvider, bargeIn, micActive, manualVision, setManualVision, visionStreaming }),
-    [state, connect, disconnect, toggleMic, registerFrameProvider, registerScreenProvider, bargeIn, micActive, manualVision, visionStreaming],
+    () => ({ state, connect, disconnect, toggleMic, registerFrameProvider, registerScreenProvider, bargeIn, micActive, manualVision, setManualVision, visionStreaming, clearError }),
+    [state, connect, disconnect, toggleMic, registerFrameProvider, registerScreenProvider, bargeIn, micActive, manualVision, visionStreaming, clearError],
   );
 }

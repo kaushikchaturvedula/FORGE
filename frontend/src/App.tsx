@@ -25,7 +25,7 @@ const ACCENTS: Record<string, string> = {
 export default function App() {
   const [config, setConfig] = useState<RuntimeConfig | null>(null);
   const [configError, setConfigError] = useState<string | null>(null);
-  const { state, connect, toggleMic, registerFrameProvider, registerScreenProvider, bargeIn, micActive, manualVision, setManualVision, visionStreaming } = useRealtimeSocket(config);
+  const { state, connect, toggleMic, registerFrameProvider, registerScreenProvider, bargeIn, micActive, manualVision, setManualVision, visionStreaming, clearError } = useRealtimeSocket(config);
 
   useEffect(() => {
     fetchConfig().then(setConfig).catch((e) => setConfigError(String(e)));
@@ -74,6 +74,15 @@ export default function App() {
           {configError && (
             <div className="mb-3 rounded border border-forge-alert bg-forge-alert/10 p-3 text-sm text-forge-text">
               Could not load runtime config: {configError}. Is the backend running on :8000?
+            </div>
+          )}
+
+          {state.error && (
+            <div className="mb-3 flex items-start justify-between gap-3 rounded border border-forge-alert bg-forge-alert/10 p-3 text-sm text-forge-text">
+              <span>⚠ {state.error}</span>
+              <button onClick={clearError} className="text-forge-muted hover:text-forge-text" aria-label="Dismiss">
+                ✕
+              </button>
             </div>
           )}
 

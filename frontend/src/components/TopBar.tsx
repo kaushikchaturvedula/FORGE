@@ -76,11 +76,12 @@ export function TopBar({
         <button
           onClick={onToggleMic}
           disabled={conn !== "connected"}
-          className={`rounded px-3 py-1 text-sm font-semibold transition ${
+          className={`flex items-center gap-1.5 rounded px-3 py-1 text-sm font-semibold transition ${
             micActive ? "bg-forge-live text-black" : "bg-forge-accent text-white"
           } disabled:opacity-40`}
         >
-          {micActive ? "🎙 Listening" : "🎙 Talk"}
+          {micActive && <span className="h-2 w-2 animate-pulseRing rounded-full bg-black" />}
+          {micActive ? "Listening — mic live" : "🎙 Talk"}
         </button>
       </div>
     </header>
