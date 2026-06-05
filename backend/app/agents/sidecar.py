@@ -1,7 +1,7 @@
 """Tool-calling sidecar — FORGE's grounding backbone.
 
 The realtime omni model is unreliable at native function calling, so a separate, reliable
-DashScope **chat-completions** model (default ``qwen-plus``, via the OpenAI-compatible
+DashScope **chat-completions** model (default ``qwen3.7-plus``, via the OpenAI-compatible
 endpoint) decides which tool(s) to call for each technician utterance. It is offered
 FORGE's existing tool schemas, and the calls it returns are executed through the existing
 orchestrator/handlers — so every value it produces comes from the bundled catalog, and the

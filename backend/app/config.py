@@ -52,7 +52,7 @@ class Settings(BaseSettings):
     # A reliable DashScope chat-completions model does the function calling over the
     # bundled catalog; the realtime model speaks the grounded result it returns.
     sidecar_enabled: bool = Field(default=True, alias="FORGE_SIDECAR_ENABLED")
-    sidecar_model: str = Field(default="qwen-plus", alias="FORGE_SIDECAR_MODEL")
+    sidecar_model: str = Field(default="qwen3.7-plus", alias="FORGE_SIDECAR_MODEL")
 
     # Audio formats (Qwen-Omni-Realtime: input 16 kHz, output 24 kHz PCM16 mono;
     # the wire format value is "pcm").
