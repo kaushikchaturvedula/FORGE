@@ -31,7 +31,7 @@ class SessionCreated:
 
 @dataclass
 class SessionUpdated:
-    pass
+    session: dict[str, Any] = field(default_factory=dict)  # the server's accepted config
 
 
 @dataclass
@@ -137,7 +137,7 @@ def parse_server_event(raw: dict[str, Any]) -> ServerEvent:
     if etype == "session.created":
         return SessionCreated(session_id=(raw.get("session") or {}).get("id"))
     if etype == "session.updated":
-        return SessionUpdated()
+        return SessionUpdated(session=raw.get("session", {}) or {})
 
     if etype == "input_audio_buffer.speech_started":
         return SpeechStarted()
@@ -215,6 +215,8 @@ def session_update(
     voice: str,
     vad_type: str = "server_vad",
     enable_vad: bool = True,
+    tools_format: str = "flat",
+    tool_choice: str = "",
 ) -> dict[str, Any]:
     """Build a session.update. Swapping instructions+tools here is how FORGE
     'transfers' between its logical agents on one session.
@@ -222,7 +224,7 @@ def session_update(
     Field values match the live DashScope realtime spec: audio format is "pcm"
     (input 16 kHz, output 24 kHz, mono 16-bit), and turn_detection is a server-VAD
     object with threshold + silence_duration_ms (server VAD auto-creates the response
-    on end-of-speech — no response.create needed)."""
+    on end-of-speech). ``tools_format`` selects flat (OpenAI-Realtime) vs nested."""
     turn_detection = (
         {"type": vad_type, "threshold": 0.5, "silence_duration_ms": 800}
         if enable_vad
@@ -238,24 +240,22 @@ def session_update(
         "turn_detection": turn_detection,
     }
     # Only advertise tools when present — avoids sending an empty/odd tools field.
-    flat = [_flatten_tool(t) for t in tools]
-    if flat:
-        session["tools"] = flat
-        session["tool_choice"] = "auto"
+    formatted = [_format_tool(t, tools_format) for t in tools]
+    if formatted:
+        session["tools"] = formatted
+        if tool_choice:  # only send when explicitly configured (unsupported field can break registration)
+            session["tool_choice"] = tool_choice
     return {"type": "session.update", "session": session}
 
 
-def _flatten_tool(tool: dict[str, Any]) -> dict[str, Any]:
-    """Realtime tool entries are flat ({type, name, description, parameters})."""
-    if tool.get("type") == "function" and "function" in tool:
-        fn = tool["function"]
-        return {
-            "type": "function",
-            "name": fn.get("name"),
-            "description": fn.get("description"),
-            "parameters": fn.get("parameters"),
-        }
-    return tool
+def _format_tool(tool: dict[str, Any], fmt: str) -> dict[str, Any]:
+    """Emit a tool entry in the requested shape. Input schemas are nested
+    ({type:function, function:{name,description,parameters}})."""
+    fn = tool.get("function", tool) if tool.get("type") == "function" else tool
+    name, desc, params = fn.get("name"), fn.get("description"), fn.get("parameters")
+    if fmt == "nested":
+        return {"type": "function", "function": {"name": name, "description": desc, "parameters": params}}
+    return {"type": "function", "name": name, "description": desc, "parameters": params}
 
 
 def input_audio_append(pcm: bytes) -> dict[str, Any]:

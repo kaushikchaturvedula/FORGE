@@ -87,15 +87,18 @@ class QwenRealtimeSession:
         voice: str | None = None,
         enable_vad: bool = True,
     ) -> None:
-        await self._send(
-            events.session_update(
-                instructions=instructions,
-                tools=tools,
-                voice=voice or self.settings.voice,
-                vad_type=self.settings.vad_type,
-                enable_vad=enable_vad,
-            )
+        payload = events.session_update(
+            instructions=instructions,
+            tools=tools,
+            voice=voice or self.settings.voice,
+            vad_type=self.settings.vad_type,
+            enable_vad=enable_vad,
+            tools_format=self.settings.tools_format,
+            tool_choice=self.settings.tool_choice,
         )
+        n_tools = len(payload["session"].get("tools", []))
+        logger.info("session.update sent (format=%s, tools=%d)", self.settings.tools_format, n_tools)
+        await self._send(payload)
 
     async def append_audio(self, pcm: bytes) -> None:
         if not pcm:
@@ -107,12 +110,12 @@ class QwenRealtimeSession:
     async def append_image(self, jpeg: bytes) -> None:
         if not jpeg:
             return
-        # The API rejects an image unless audio precedes it in the current buffer. Server
-        # VAD commits the buffer after each turn, so "audio was sent once" isn't enough —
-        # if no real audio has flowed recently (vision-only, or between utterances), prime
-        # a short silence so the frame is accepted. Silence doesn't trigger a VAD response.
-        if not self._audio_sent or (time.monotonic() - self._last_audio_at) > 0.4:
-            await self.append_audio(b"\x00" * 640)  # 20 ms of 16 kHz mono PCM16 silence
+        # The API rejects an image unless real audio precedes it in the current buffer, and
+        # a silence-prime doesn't reliably register ("append image before append audio").
+        # So only stream a frame when the technician has actually spoken recently — which is
+        # exactly when vision matters. Otherwise skip the frame quietly.
+        if not self._audio_sent or (time.monotonic() - self._last_audio_at) > 10.0:
+            return
         await self._send(events.input_image_append(jpeg))
 
     async def commit_audio(self) -> None:
@@ -129,6 +132,16 @@ class QwenRealtimeSession:
         # Prompt the model to continue speaking with the grounded result.
         await self._send(events.response_create())
 
+    async def inject_message(self, text: str, role: str = "user") -> None:
+        """Insert a message into the conversation (e.g. grounded results from the sidecar)
+        without triggering a response — the caller decides when to create_response()."""
+        await self._send(
+            {
+                "type": "conversation.item.create",
+                "item": {"type": "message", "role": role, "content": [{"type": "input_text", "text": text}]},
+            }
+        )
+
     # ── inbound (Qwen -> FORGE) ──────────────────────────────────────────────
     async def events(self) -> AsyncIterator[events.ServerEvent]:
         if self._ws is None:
@@ -138,6 +151,8 @@ class QwenRealtimeSession:
                 data = json.loads(raw)
             except (ValueError, TypeError):
                 continue
+            if self.settings.debug_events:
+                logger.info("raw event: %s", str(data)[:600])
             evt = events.parse_server_event(data)
             if isinstance(evt, events.SessionCreated):
                 self.session_id = evt.session_id

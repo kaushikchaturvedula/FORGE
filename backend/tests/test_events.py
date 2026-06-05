@@ -93,6 +93,25 @@ def test_session_update_vad_type_override():
     assert upd["session"]["turn_detection"]["type"] == "semantic_vad"
 
 
+def test_tools_format_flat_vs_nested_and_tool_choice():
+    tool = {"type": "function", "function": {"name": "lookup_part", "description": "d", "parameters": {"type": "object"}}}
+    flat = ev.session_update(instructions="x", tools=[tool], voice="Cherry", tools_format="flat")["session"]["tools"][0]
+    assert flat["name"] == "lookup_part" and "function" not in flat  # flattened
+
+    nested = ev.session_update(instructions="x", tools=[tool], voice="Cherry", tools_format="nested")["session"]["tools"][0]
+    assert "function" in nested and nested["function"]["name"] == "lookup_part"
+
+    # tool_choice only sent when explicitly configured
+    assert "tool_choice" not in ev.session_update(instructions="x", tools=[tool], voice="Cherry")["session"]
+    assert ev.session_update(instructions="x", tools=[tool], voice="Cherry", tool_choice="auto")["session"]["tool_choice"] == "auto"
+
+
+def test_session_updated_echo_parsed():
+    out = ev.parse_server_event({"type": "session.updated", "session": {"tools": [1], "voice": "Cherry"}})
+    assert isinstance(out, ev.SessionUpdated)
+    assert out.session.get("tools") == [1]
+
+
 def test_function_call_output_builder_round_trips():
     out = ev.function_call_output("call_9", {"torque_nm": 12})
     assert out["item"]["type"] == "function_call_output"

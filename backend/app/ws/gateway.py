@@ -35,6 +35,7 @@ from starlette.websockets import WebSocket, WebSocketDisconnect
 
 from app.agents.orchestrator import Orchestrator
 from app.agents.session_state import SessionState
+from app.agents.sidecar import make_sidecar
 from app.config import Settings, get_settings
 from app.realtime import events
 from app.realtime.session import QwenRealtimeSession
@@ -45,6 +46,23 @@ logger = logging.getLogger("forge.gateway")
 AUDIO_FLUSH_BYTES = 3200  # ~100 ms of 16 kHz mono PCM16
 DEDUP_WINDOW_S = 4.0
 MAX_CONNECT_FAILURES = 5
+
+# Realtime warnings that are non-fatal noise — logged, never shown as a red banner.
+_BENIGN_ERROR_MARKERS = ("append image before append audio", "response timeout")
+
+
+def _is_benign_error(message: str) -> bool:
+    m = (message or "").lower()
+    return any(k in m for k in _BENIGN_ERROR_MARKERS)
+
+
+def _mostly_cjk(text: str) -> bool:
+    """True when a transcript line is mostly CJK — a gummy misrecognition of English."""
+    if not text or not text.strip():
+        return False
+    cjk = sum(1 for c in text if "぀" <= c <= "鿿")
+    latin = sum(1 for c in text if c.isascii() and c.isalpha())
+    return cjk > 0 and cjk >= max(1, latin)
 
 
 def build_resume_summary(state: SessionState) -> str:
@@ -90,6 +108,10 @@ class RealtimeBridge:
         self._connect_failures = 0
         self._want_session = asyncio.Event()
         self._connect_lock = asyncio.Lock()
+        self._seen_event_types: set[str] = set()
+        self.sidecar = make_sidecar(self.settings)  # grounding brain (may be a no-op)
+        self._history: list[dict[str, str]] = []  # rolling transcript for the sidecar
+        self._bg_tasks: set[asyncio.Task] = set()  # background sidecar runs
 
     # ── lifecycle ────────────────────────────────────────────────────────────
     async def run(self) -> None:
@@ -112,14 +134,16 @@ class RealtimeBridge:
 
         self._closing = True
         self._want_session.set()  # unblock a parked downstream so it can exit
-        for task in pending:
+        for task in (*pending, *self._bg_tasks):
             task.cancel()
-        await asyncio.gather(*pending, return_exceptions=True)
+        await asyncio.gather(*pending, *self._bg_tasks, return_exceptions=True)
         for task in done:
             exc = task.exception()
             if exc and not isinstance(exc, (WebSocketDisconnect, asyncio.CancelledError)):
                 logger.info("bridge task ended: %r", exc)
         await self.session.close()
+        if hasattr(self.sidecar, "aclose"):
+            await self.sidecar.aclose()
         await self._safe_close()
 
     async def _ensure_session(self) -> bool:
@@ -265,11 +289,13 @@ class RealtimeBridge:
         elif isinstance(evt, events.OutputTranscriptDelta):
             await self._safe_send_json(protocol.transcript("assistant", delta=evt.text))
         elif isinstance(evt, events.OutputTranscriptDone):
+            if evt.text:
+                self._history.append({"role": "assistant", "content": evt.text})
             await self._safe_send_json(protocol.transcript("assistant", text=evt.text, final=True))
         elif isinstance(evt, events.InputTranscriptDelta):
-            await self._safe_send_json(protocol.transcript("user", delta=evt.text))
+            pass  # user partials are dropped (avoids flickering CJK misrecognitions)
         elif isinstance(evt, events.InputTranscriptDone):
-            await self._safe_send_json(protocol.transcript("user", text=evt.text, final=True))
+            await self._on_user_transcript(evt.text)
         elif isinstance(evt, events.SpeechStarted):
             await self._safe_send_json(protocol.interrupted())  # barge-in: drain playback
             await self._safe_send_json(protocol.state("listening"))
@@ -279,38 +305,102 @@ class RealtimeBridge:
             await self._safe_send_json(protocol.state("speaking"))
         elif isinstance(evt, events.ResponseDone):
             await self._safe_send_json(protocol.state("listening", self._remaining()))
+        elif isinstance(evt, events.SessionUpdated):
+            logger.info(
+                "session.updated echo: tools=%s keys=%s",
+                bool(evt.session.get("tools")), sorted(evt.session)[:12],
+            )
         elif isinstance(evt, events.FunctionCallDone):
+            logger.info("NATIVE function call: %s args=%s", evt.name, evt.arguments)
             await self._handle_tool_call(evt)
         elif isinstance(evt, events.RealtimeError):
-            logger.warning("realtime error: %s (code=%s)", evt.message, evt.code)
-            await self._safe_send_json(protocol.error(evt.message))
+            if _is_benign_error(evt.message):
+                logger.info("realtime notice (benign): %s", evt.message)  # not shown to user
+            else:
+                logger.warning("realtime error: %s (code=%s)", evt.message, evt.code)
+                await self._safe_send_json(protocol.error(evt.message))
         elif isinstance(evt, events.UnknownEvent):
-            logger.debug("unhandled realtime event: %s", evt.type)
+            if evt.type not in self._seen_event_types:
+                self._seen_event_types.add(evt.type)
+                logger.info("unhandled realtime event type: %s", evt.type)
+
+    async def _on_user_transcript(self, text: str) -> None:
+        """A finalized user utterance: filter misrecognitions, show it, run the sidecar."""
+        if _mostly_cjk(text):
+            logger.info("dropping CJK-misrecognized transcript: %r", text)
+            return
+        await self._safe_send_json(protocol.transcript("user", text=text, final=True))
+        if text.strip():
+            self._history.append({"role": "user", "content": text})
+            # Run the sidecar in the background so it never blocks audio playback.
+            task = asyncio.create_task(self._run_sidecar(text))
+            self._bg_tasks.add(task)
+            task.add_done_callback(self._bg_tasks.discard)
 
     # ── tool calls ───────────────────────────────────────────────────────────
-    async def _handle_tool_call(self, call: events.FunctionCallDone) -> None:
-        key = f"{call.name}:{json.dumps(call.arguments, sort_keys=True)}"
+    async def _apply_tool(self, name: str, args: dict):
+        """Run one tool through the orchestrator and emit its browser effects + a transfer
+        session.update. Shared by the native path and the sidecar. Returns the outcome (or
+        None on dedup). Never raises — a failed tool still yields a spoken-able result."""
+        key = f"{name}:{json.dumps(args, sort_keys=True)}"
         if self.dedup.is_duplicate(key, time.monotonic()):
-            logger.info("deduped tool call %s", call.name)
-            return
-
-        await self._safe_send_json(protocol.tool_event(call.name, status="called", args=call.arguments))
+            logger.info("deduped tool call %s", name)
+            return None
+        await self._safe_send_json(protocol.tool_event(name, status="called", args=args))
         t0 = time.monotonic()
-        outcome = self.orch.process_tool_call(call.name, call.arguments)
+        try:
+            outcome = self.orch.process_tool_call(name, args)
+        except Exception as exc:  # noqa: BLE001 — never stall the turn
+            logger.exception("tool %s failed", name)
+            from app.agents.orchestrator import ToolOutcome
 
+            outcome = ToolOutcome(model_output={"error": "tool_failed", "message": f"{name} failed: {exc}"})
         if outcome.session_update is not None:  # transfer: swap the active agent
             instructions, tools = outcome.session_update
             await self.session.update_session(instructions=instructions, tools=tools)
-
-        await self.session.send_function_result(call.call_id, outcome.model_output)
-
         for msg in outcome.frontend:
             await self._safe_send_json(msg)
-
         latency_ms = (time.monotonic() - t0) * 1000
         await self._safe_send_json(
             protocol.metrics(self.orch.metrics.count, self.orch.metrics.last_tool, self.orch.metrics.rejected, latency_ms)
         )
+        return outcome
+
+    async def _handle_tool_call(self, call: events.FunctionCallDone) -> None:
+        """Native realtime function call — execute and return the result to the model."""
+        outcome = await self._apply_tool(call.name, call.arguments)
+        if outcome is None:  # duplicate within the dedup window — first result already sent
+            return
+        await self.session.send_function_result(call.call_id, outcome.model_output)
+
+    async def _run_sidecar(self, user_text: str) -> None:
+        """The grounding brain: a reliable text model decides which tools to call; we run
+        them through the SAME handlers (panels + grounded results), then inject the results
+        for the realtime model to speak — so spoken machine data is always catalog-true."""
+        if not self.sidecar.enabled or not self.session.connected:
+            return
+        try:
+            calls = await self.sidecar.decide(user_text, self._history[-8:])
+        except Exception as exc:  # noqa: BLE001 — never break the turn on a sidecar hiccup
+            logger.warning("sidecar error: %r", exc)
+            return
+        if not calls:
+            return
+        grounded: list[dict] = []
+        for name, args in calls:
+            outcome = await self._apply_tool(name, args)
+            if outcome is not None:
+                grounded.append({"tool": name, "result": outcome.model_output})
+        if not grounded:
+            return
+        note = (
+            "GROUNDED RESULTS from the work-order catalog for the technician's last request. "
+            "Answer using ONLY these values; never change any number, part code, or step:\n"
+            + json.dumps(grounded)
+        )
+        logger.info("sidecar grounded %d tool(s): %s", len(grounded), [g["tool"] for g in grounded])
+        await self.session.inject_message(note, role="user")
+        await self.session.create_response()
 
     # ── helpers ──────────────────────────────────────────────────────────────
     def _remaining(self) -> int:

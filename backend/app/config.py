@@ -29,13 +29,30 @@ class Settings(BaseSettings):
     # ── Qwen Cloud / DashScope ───────────────────────────────────────────────
     dashscope_api_key: str = Field(default="", alias="DASHSCOPE_API_KEY")
     region: str = Field(default="intl", alias="FORGE_REGION")
+    # qwen3.5-omni-plus-realtime has full tool support (the older flash variant's is
+    # limited). Available on the international endpoint.
     realtime_model: str = Field(
-        default="qwen3-omni-flash-realtime", alias="FORGE_REALTIME_MODEL"
+        default="qwen3.5-omni-plus-realtime", alias="FORGE_REALTIME_MODEL"
     )
     voice: str = Field(default="Cherry", alias="FORGE_VOICE")
 
     # Turn detection: "server_vad" (broadly supported) or "semantic_vad" (qwen3.5+).
     vad_type: str = Field(default="server_vad", alias="FORGE_VAD_TYPE")
+
+    # Realtime tool registration shape: "flat" ({type,name,description,parameters},
+    # OpenAI-Realtime style) or "nested" ({type,function:{...}}). The session.updated echo
+    # (logged at startup) tells you which the server accepted.
+    tools_format: str = Field(default="flat", alias="FORGE_TOOLS_FORMAT")
+    # Only sent when set (an unsupported field can nullify tool registration).
+    tool_choice: str = Field(default="", alias="FORGE_TOOL_CHOICE")
+    # Dump every raw realtime event to the log for protocol debugging.
+    debug_events: bool = Field(default=False, alias="FORGE_DEBUG_EVENTS")
+
+    # ── Tool-calling sidecar (the grounding backbone) ────────────────────────
+    # A reliable DashScope chat-completions model does the function calling over the
+    # bundled catalog; the realtime model speaks the grounded result it returns.
+    sidecar_enabled: bool = Field(default=True, alias="FORGE_SIDECAR_ENABLED")
+    sidecar_model: str = Field(default="qwen-plus", alias="FORGE_SIDECAR_MODEL")
 
     # Audio formats (Qwen-Omni-Realtime: input 16 kHz, output 24 kHz PCM16 mono;
     # the wire format value is "pcm").
@@ -69,6 +86,12 @@ class Settings(BaseSettings):
     def realtime_ws_url(self) -> str:
         base = _WS_ENDPOINTS.get(self.region, _WS_ENDPOINTS["intl"])
         return f"{base}?model={self.realtime_model}"
+
+    @property
+    def sidecar_base_url(self) -> str:
+        # DashScope OpenAI-compatible endpoint for the chat-completions tool brain.
+        host = "dashscope-intl" if self.region == "intl" else "dashscope"
+        return f"https://{host}.aliyuncs.com/compatible-mode/v1"
 
     @property
     def dashscope_region(self) -> str:
