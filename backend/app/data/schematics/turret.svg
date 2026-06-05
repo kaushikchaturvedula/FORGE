@@ -1,0 +1,69 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600" width="800" height="600" font-family="JetBrains Mono, monospace">
+  <title>PL45LM Turret / Tool Changer</title>
+  <desc>Synthetic labeled schematic of the 12-station turret for the PL45LM-class turn-mill. Component ids match navigate_schematic targets.</desc>
+  <style>
+    .frame { fill:#0e1622; stroke:#1e2733; stroke-width:2; }
+    .part  { fill:#16202c; stroke:#9fb3c8; stroke-width:2; }
+    .lbl   { fill:#e5edf5; font-size:15px; }
+    .cap   { fill:#7d8da3; font-size:12px; }
+    .lead  { stroke:#5b6b80; stroke-width:1; stroke-dasharray:3 3; }
+    .stn   { fill:#22303f; stroke:#9fb3c8; stroke-width:1.5; }
+  </style>
+
+  <rect class="frame" x="8" y="8" width="784" height="584" rx="8"/>
+  <text class="lbl" x="24" y="38" font-size="18">PL45LM — Turret / Tool Changer (12 station)</text>
+  <text class="cap" x="24" y="58">Synthetic schematic · servo-indexed curvic coupling</text>
+
+  <!-- Turret head: 12 stations around a hub -->
+  <g id="turret_head">
+    <circle cx="360" cy="330" r="150" class="part"/>
+    <circle cx="360" cy="330" r="44" class="stn"/>
+    <line class="lead" x1="360" y1="180" x2="360" y2="110"/>
+    <text class="lbl" x="300" y="100">Turret head</text>
+  </g>
+
+  <!-- 12 tool stations -->
+  <g id="tool_stations">
+    <g>
+      <circle class="stn" cx="360" cy="210" r="16"/>
+      <circle class="stn" cx="420" cy="222" r="16"/>
+      <circle class="stn" cx="465" cy="263" r="16"/>
+      <circle class="stn" cx="482" cy="320" r="16"/>
+      <circle class="stn" cx="470" cy="378" r="16"/>
+      <circle class="stn" cx="432" cy="424" r="16"/>
+      <circle class="stn" cx="378" cy="445" r="16"/>
+      <circle class="stn" cx="320" cy="440" r="16"/>
+      <circle class="stn" cx="270" cy="408" r="16"/>
+      <circle class="stn" cx="245" cy="353" r="16"/>
+      <circle class="stn" cx="250" cy="295" r="16"/>
+      <circle class="stn" cx="295" cy="240" r="16"/>
+    </g>
+    <line class="lead" x1="482" y1="320" x2="600" y2="320"/>
+    <text class="lbl" x="610" y="317">Tool stations</text>
+    <text class="cap" x="610" y="335">12 × BT40</text>
+  </g>
+
+  <!-- Indexing motor -->
+  <g id="index_motor">
+    <rect class="part" x="150" y="300" width="70" height="60" rx="6"/>
+    <line class="lead" x1="220" y1="330" x2="316" y2="330"/>
+    <text class="lbl" x="40" y="296">Index motor</text>
+    <text class="cap" x="40" y="386">2.0 kW servo</text>
+  </g>
+
+  <!-- Clamp cylinder -->
+  <g id="clamp_cylinder">
+    <rect class="part" x="330" y="500" width="60" height="40" rx="4"/>
+    <line class="lead" x1="360" y1="500" x2="360" y2="466"/>
+    <text class="lbl" x="410" y="525">Clamp cylinder</text>
+    <text class="cap" x="410" y="543">50 bar hydraulic</text>
+  </g>
+
+  <!-- Curvic coupling -->
+  <g id="curvic_coupling">
+    <circle cx="360" cy="330" r="28" class="part"/>
+    <path d="M340 330 l40 0 M360 310 l0 40 M346 316 l28 28 M374 316 l-28 28" stroke="#9fb3c8" stroke-width="1"/>
+    <line class="lead" x1="388" y1="330" x2="600" y2="420"/>
+    <text class="lbl" x="610" y="423">Curvic coupling</text>
+  </g>
+</svg>

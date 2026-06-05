@@ -1,0 +1,77 @@
+{
+  "_comment": "FORGE maintenance/repair procedures for the PL45LM-class turn-mill. Distilled and re-authored into structured steps from general CNC mill practice (Artisans Asylum CC startup/shutdown workflow; Haas/Tormach operator-manual style). No manual text is reproduced verbatim. The model walks these one step at a time via start_procedure + procedure_step.",
+  "procedures": {
+    "spindle_warmup": {
+      "procedure_id": "spindle_warmup",
+      "title": "Spindle warm-up",
+      "aliases": ["warm up", "warmup", "spindle warm up"],
+      "est_minutes": 12,
+      "prerequisites": ["Machine powered and homed", "Guards closed", "No tool in cut"],
+      "warnings": [
+        "Never skip warm-up on a cold spindle — thermal growth throws off Z and can pre-load bearings."
+      ],
+      "steps": [
+        { "n": 1, "text": "Confirm the spindle area is clear and the door is closed.", "confirm": true },
+        { "n": 2, "text": "Run the spindle at 500 rpm for 3 minutes.", "expect": "Smooth, no abnormal noise" },
+        { "n": 3, "text": "Step to 1500 rpm for 3 minutes.", "expect": "Bearing temperature trending gently up" },
+        { "n": 4, "text": "Step to 3000 rpm for 3 minutes." },
+        { "n": 5, "text": "Step to rated/max test speed for 3 minutes, then ramp down.", "warning": "Stop immediately if you hear grinding or see a temperature spike." },
+        { "n": 6, "text": "Verify spindle load returns to baseline at idle. Warm-up complete." }
+      ]
+    },
+    "tool_change": {
+      "procedure_id": "tool_change",
+      "title": "Manual tool change (BT40)",
+      "aliases": ["tool change", "change tool", "swap tool", "replace tool"],
+      "est_minutes": 6,
+      "prerequisites": ["Spindle stopped", "LOTO not required for guarded manual change at the spindle, but verify motion is inhibited"],
+      "warnings": [
+        "Keep a hand under the holder — it drops on unclamp.",
+        "Never press unclamp with the spindle rotating."
+      ],
+      "steps": [
+        { "n": 1, "text": "Confirm the spindle has fully stopped and motion is inhibited.", "confirm": true },
+        { "n": 2, "text": "Support the tool holder by hand, then press and hold spindle UNCLAMP.", "part_ref": "tool_holder" },
+        { "n": 3, "text": "Remove the holder; inspect the taper and pull stud for nicks or coolant residue.", "part_ref": "pull_stud" },
+        { "n": 4, "text": "Wipe the spindle taper clean and dry. Inspect for fretting.", "expect": "Bright, clean taper" },
+        { "n": 5, "text": "Insert the new holder, release UNCLAMP to draw it in, and confirm it seats with a positive clamp.", "part_ref": "tool_holder" },
+        { "n": 6, "text": "If the holder was reassembled, verify the retention bolts to spec.", "fastener_ref": "tool_holder_bolt" },
+        { "n": 7, "text": "Tug-test the holder by hand. Record the tool change in the work log." }
+      ]
+    },
+    "drawbar_inspection": {
+      "procedure_id": "drawbar_inspection",
+      "title": "Drawbar / unclamp inspection",
+      "aliases": ["drawbar inspection", "draw bar inspection", "unclamp inspection", "drawbar service"],
+      "est_minutes": 35,
+      "prerequisites": ["LOTO complete and verified", "Spindle cool", "Tool removed"],
+      "warnings": [
+        "Lockout/tagout is MANDATORY — the unclamp cylinder is hydraulically powerful.",
+        "Disc springs store energy; back off the locknut in a controlled manner."
+      ],
+      "steps": [
+        { "n": 1, "text": "Confirm LOTO is applied and verified before any disassembly.", "confirm": true, "safety_ref": "loto" },
+        { "n": 2, "text": "Remove the spindle top cap to expose the drawbar and disc-spring stack.", "part_ref": "drawbar" },
+        { "n": 3, "text": "Cycle unclamp manually (energy isolated) and feel for hesitation or binding.", "expect": "Crisp, repeatable unclamp" },
+        { "n": 4, "text": "Measure the disc-spring stack free length; replace as a set if below the limit.", "part_ref": "drawbar_disc_springs", "expect": "Free length 90 mm or greater" },
+        { "n": 5, "text": "Inspect the unclamp cylinder seals for weep.", "part_ref": "drawbar" },
+        { "n": 6, "text": "Reassemble; set the drawbar locknut and verify clamp force with a load cell.", "fastener_ref": "drawbar_locknut", "expect": "13.5 kN clamp force" },
+        { "n": 7, "text": "Remove LOTO per procedure, then function-test ten clamp/unclamp cycles.", "safety_ref": "loto" }
+      ]
+    },
+    "coolant_union_service": {
+      "procedure_id": "coolant_union_service",
+      "title": "Through-spindle coolant union service",
+      "aliases": ["coolant union service", "rotary union service", "coolant seal replacement"],
+      "est_minutes": 25,
+      "prerequisites": ["LOTO complete", "Coolant pressure bled to zero"],
+      "warnings": ["Bleed through-spindle coolant pressure to zero before opening the union."],
+      "steps": [
+        { "n": 1, "text": "Confirm LOTO and that coolant pressure reads zero.", "confirm": true, "safety_ref": "loto" },
+        { "n": 2, "text": "Disconnect the coolant line and remove the rotary union.", "part_ref": "coolant_union" },
+        { "n": 3, "text": "Replace the carbon face seal; inspect the rotating seat for scoring.", "part_ref": "coolant_union" },
+        { "n": 4, "text": "Reinstall, reconnect, restore LOTO, and leak-test at 20 bar.", "safety_ref": "loto", "expect": "No weep at 20 bar" }
+      ]
+    }
+  }
+}

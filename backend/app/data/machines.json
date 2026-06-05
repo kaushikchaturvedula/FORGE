@@ -1,0 +1,151 @@
+{
+  "_comment": "FORGE asset registry. Synthetic, modeled on a Samsung PL45LM-class turn-mill (CNC vertical machining center / turn-mill). Telemetry rows and thresholds are derived from the AI4I 2020 Predictive Maintenance dataset (CC BY 4.0); see DATA_SOURCES.md. No real Samsung/Fanuc data is reproduced.",
+  "machines": {
+    "PL45LM-01": {
+      "asset_id": "PL45LM-01",
+      "nameplate": {
+        "manufacturer": "Synthetic Machine Tool Co. (PL45LM-class registry)",
+        "model": "PL45LM Turn-Mill",
+        "machine_class": "CNC vertical machining center / turn-mill",
+        "serial_number": "SYN-PL45LM-2026-0142",
+        "control": "Fanuc-class CNC control (synthetic profile)",
+        "year": 2022,
+        "asset_tag": "PL45LM-01",
+        "location": "Bay 3, Cell A — primary production line"
+      },
+      "specs": {
+        "spindle": {
+          "max_speed_rpm": 4000,
+          "rated_speed_rpm": 1538,
+          "max_torque_nm": 77,
+          "rated_torque_nm": 40,
+          "taper": "BT40 (synthetic)",
+          "drive": "AC spindle motor, belt-coupled",
+          "rated_power_kw": 11
+        },
+        "turret": {
+          "stations": 12,
+          "indexing": "servo-driven bidirectional",
+          "max_tool_diameter_mm": 80
+        },
+        "axes": {
+          "travel_x_mm": 560,
+          "travel_y_mm": 450,
+          "travel_z_mm": 510,
+          "rapid_traverse_m_min": 36,
+          "positioning_um": 6
+        },
+        "coolant": {
+          "tank_l": 240,
+          "through_spindle_bar": 20
+        }
+      },
+      "telemetry_source": {
+        "dataset": "AI4I 2020 Predictive Maintenance (UCI id 601, CC BY 4.0)",
+        "file": "telemetry/ai4i2020.csv",
+        "channel_map": {
+          "rotational_speed": "Rotational speed [rpm]",
+          "spindle_torque": "Torque [Nm]",
+          "tool_wear": "Tool wear [min]",
+          "air_temperature": "Air temperature [K]",
+          "process_temperature": "Process temperature [K]"
+        }
+      },
+      "telemetry_scenarios": {
+        "nominal": {
+          "label": "Nominal production run",
+          "ai4i_udi": 1,
+          "readings": {
+            "rotational_speed": { "value": 1551, "unit": "rpm" },
+            "spindle_torque": { "value": 42.8, "unit": "Nm" },
+            "tool_wear": { "value": 191, "unit": "min" },
+            "air_temperature": { "value": 298.1, "unit": "K" },
+            "process_temperature": { "value": 308.6, "unit": "K" }
+          },
+          "note": "Healthy run. Tool wear is elevated (191 min) — close to replacement — which is why a high-torque cut will trip overstrain (see demo)."
+        },
+        "overstrain_failure": {
+          "label": "Overstrain failure (OSF)",
+          "ai4i_udi": 70,
+          "readings": {
+            "rotational_speed": { "value": 1410, "unit": "rpm" },
+            "spindle_torque": { "value": 65.7, "unit": "Nm" },
+            "tool_wear": { "value": 191, "unit": "min" },
+            "air_temperature": { "value": 298.9, "unit": "K" },
+            "process_temperature": { "value": 309.0, "unit": "K" }
+          },
+          "note": "AI4I overstrain row: tool_wear x torque = 191 x 65.7 = 12549 minNm, over the 11000 minNm L/M overstrain limit. This is the demo threshold trip."
+        }
+      },
+      "thresholds": {
+        "_rules": "Grounded in the AI4I 2020 failure definitions. Each reading is checked on record_measurement; crossing 'alert' raises a spoken + visual alarm, 'warn' raises caution.",
+        "spindle_torque": {
+          "unit": "Nm",
+          "warn_above": 60,
+          "alert_above": 70,
+          "rated": 40,
+          "max": 77,
+          "rationale": "Torque approaching rated max strains the spindle; combined with tool wear it drives overstrain failure (OSF)."
+        },
+        "tool_wear": {
+          "unit": "min",
+          "warn_above": 180,
+          "alert_above": 200,
+          "rationale": "AI4I tool-wear failure (TWF) occurs in the 200-240 min band. Replace the tool before 200 min."
+        },
+        "process_temperature": {
+          "unit": "K",
+          "warn_above": 312.5,
+          "alert_above": 313.5,
+          "rationale": "Process temperature ceiling before heat-dissipation problems."
+        },
+        "rotational_speed": {
+          "unit": "rpm",
+          "warn_above": 2800,
+          "alert_above": 3200,
+          "rationale": "Excess speed at low torque drives power failure (PWF); spindle rated speed is 1538 rpm."
+        },
+        "overstrain_index": {
+          "unit": "minNm",
+          "formula": "tool_wear * spindle_torque",
+          "warn_above": 9500,
+          "alert_above": 11000,
+          "rationale": "AI4I overstrain failure (OSF) limit is 11000 minNm for L/M-grade product. Checked automatically when spindle_torque is recorded against current tool wear."
+        }
+      },
+      "maintenance_history": [
+        {
+          "date": "2026-05-12",
+          "work_order": "WO-2026-0488",
+          "event": "Scheduled 500-hour PM",
+          "technician": "A. Okafor",
+          "notes": "Replaced spindle coolant union seal. Verified drawbar clamp force in spec. Greased X/Y linear guides."
+        },
+        {
+          "date": "2026-03-28",
+          "work_order": "WO-2026-0231",
+          "event": "Tool-change reliability complaint",
+          "technician": "R. Singh",
+          "notes": "Drawbar disc springs measured at 88% of free length. Logged for trend; within tolerance."
+        },
+        {
+          "date": "2026-01-09",
+          "work_order": "WO-2026-0044",
+          "event": "Spindle bearing temperature trend alert",
+          "technician": "A. Okafor",
+          "notes": "Re-tensioned spindle drive belt. Heat-soak test passed. No bearing replacement required."
+        }
+      ],
+      "open_faults": [
+        {
+          "fault_id": "F-2218",
+          "raised": "2026-06-03",
+          "symptom": "Intermittent tool-unclamp delay at station change; operator reports occasional 2-3 s hesitation.",
+          "suspected": "Drawbar / unclamp cylinder",
+          "severity": "medium",
+          "status": "open"
+        }
+      ]
+    }
+  }
+}

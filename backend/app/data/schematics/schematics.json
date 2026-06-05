@@ -1,0 +1,51 @@
+{
+  "_comment": "Index of FORGE schematics. diagram_type maps to an SVG file; each component id matches a navigate_schematic target and carries a center + bbox (in the 800x600 viewBox) so the frontend can draw a highlight ring and zoom to it.",
+  "diagrams": {
+    "spindle": {
+      "diagram_type": "spindle",
+      "title": "Spindle Assembly (BT40)",
+      "aliases": ["spindle", "spindle assembly", "spindle cartridge"],
+      "file": "spindle.svg",
+      "viewbox": { "w": 800, "h": 600 },
+      "components": [
+        { "id": "coolant_union", "label": "Coolant union", "aliases": ["coolant union", "rotary union"], "center": { "x": 400, "y": 109 }, "bbox": { "x": 360, "y": 92, "w": 80, "h": 34 } },
+        { "id": "spindle_motor", "label": "Spindle motor", "aliases": ["spindle motor", "motor"], "center": { "x": 400, "y": 165 }, "bbox": { "x": 330, "y": 130, "w": 140, "h": 70 } },
+        { "id": "encoder", "label": "Encoder", "aliases": ["encoder", "spindle encoder"], "center": { "x": 493, "y": 166 }, "bbox": { "x": 470, "y": 146, "w": 46, "h": 40 } },
+        { "id": "drawbar", "label": "Drawbar", "aliases": ["drawbar", "draw bar", "draw-bar", "pull bar"], "center": { "x": 400, "y": 315 }, "bbox": { "x": 388, "y": 200, "w": 24, "h": 230 } },
+        { "id": "disc_springs", "label": "Disc springs", "aliases": ["disc springs", "belleville", "spring stack"], "center": { "x": 400, "y": 305 }, "bbox": { "x": 370, "y": 270, "w": 60, "h": 70 } },
+        { "id": "spindle_bearings", "label": "Spindle bearings", "aliases": ["spindle bearings", "bearings", "bearing pack"], "center": { "x": 400, "y": 378 }, "bbox": { "x": 356, "y": 350, "w": 88, "h": 56 } },
+        { "id": "spindle_nose", "label": "Spindle nose", "aliases": ["spindle nose", "nose", "taper"], "center": { "x": 400, "y": 454 }, "bbox": { "x": 360, "y": 430, "w": 80, "h": 48 } },
+        { "id": "tool_holder", "label": "Tool holder", "aliases": ["tool holder", "toolholder", "holder"], "center": { "x": 400, "y": 516 }, "bbox": { "x": 384, "y": 478, "w": 32, "h": 76 } }
+      ]
+    },
+    "turret": {
+      "diagram_type": "turret",
+      "title": "Turret / Tool Changer (12 station)",
+      "aliases": ["turret", "tool changer", "tool turret"],
+      "file": "turret.svg",
+      "viewbox": { "w": 800, "h": 600 },
+      "components": [
+        { "id": "turret_head", "label": "Turret head", "aliases": ["turret head", "head"], "center": { "x": 360, "y": 330 }, "bbox": { "x": 210, "y": 180, "w": 300, "h": 300 } },
+        { "id": "tool_stations", "label": "Tool stations", "aliases": ["tool stations", "stations", "pockets"], "center": { "x": 360, "y": 330 }, "bbox": { "x": 230, "y": 194, "w": 260, "h": 260 } },
+        { "id": "index_motor", "label": "Index motor", "aliases": ["index motor", "indexing motor", "turret motor"], "center": { "x": 185, "y": 330 }, "bbox": { "x": 150, "y": 300, "w": 70, "h": 60 } },
+        { "id": "clamp_cylinder", "label": "Clamp cylinder", "aliases": ["clamp cylinder", "turret clamp"], "center": { "x": 360, "y": 520 }, "bbox": { "x": 330, "y": 500, "w": 60, "h": 40 } },
+        { "id": "curvic_coupling", "label": "Curvic coupling", "aliases": ["curvic coupling", "curvic", "coupling"], "center": { "x": 360, "y": 330 }, "bbox": { "x": 332, "y": 302, "w": 56, "h": 56 } }
+      ]
+    },
+    "axes": {
+      "diagram_type": "axes",
+      "title": "Axis Layout (X / Y / Z)",
+      "aliases": ["axes", "axis", "axis layout", "motion system"],
+      "file": "axes.svg",
+      "viewbox": { "w": 800, "h": 600 },
+      "components": [
+        { "id": "z_axis", "label": "Z axis", "aliases": ["z axis", "z-axis", "column"], "center": { "x": 150, "y": 310 }, "bbox": { "x": 120, "y": 100, "w": 60, "h": 420 } },
+        { "id": "y_axis", "label": "Y axis", "aliases": ["y axis", "y-axis", "saddle"], "center": { "x": 400, "y": 270 }, "bbox": { "x": 220, "y": 240, "w": 360, "h": 60 } },
+        { "id": "x_axis", "label": "X axis", "aliases": ["x axis", "x-axis", "table"], "center": { "x": 440, "y": 465 }, "bbox": { "x": 220, "y": 430, "w": 440, "h": 70 } },
+        { "id": "x_ballscrew", "label": "X ballscrew", "aliases": ["x ballscrew", "ballscrew", "ball screw"], "center": { "x": 440, "y": 477 }, "bbox": { "x": 230, "y": 470, "w": 420, "h": 14 } },
+        { "id": "linear_guide", "label": "Linear guide", "aliases": ["linear guide", "guideway", "rail", "way"], "center": { "x": 320, "y": 505 }, "bbox": { "x": 230, "y": 494, "w": 420, "h": 22 } },
+        { "id": "x_servo_motor", "label": "X servo motor", "aliases": ["x servo", "x servo motor", "servo motor"], "center": { "x": 695, "y": 480 }, "bbox": { "x": 660, "y": 450, "w": 70, "h": 60 } }
+      ]
+    }
+  }
+}

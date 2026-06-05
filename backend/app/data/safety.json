@@ -1,0 +1,50 @@
+{
+  "_comment": "FORGE safety checklists for the PL45LM-class turn-mill. Authored from standard lockout/tagout (OSHA 1910.147-style) and machine-shop PPE practice, distilled into structured items. Each item requires the technician's spoken confirmation before the Safety_Agent advances — a hard human-in-the-loop checkpoint.",
+  "checks": {
+    "loto": {
+      "check_type": "loto",
+      "title": "Lockout / Tagout (LOTO)",
+      "aliases": ["lockout", "lockout tagout", "loto", "lock out", "energy isolation"],
+      "hazard": "Stored electrical, hydraulic, pneumatic, and gravitational energy. Failure to isolate can cause crushing, amputation, or electrocution.",
+      "require_verbal_confirmation": true,
+      "items": [
+        { "n": 1, "text": "Notify affected personnel that the machine is being locked out.", "prompt": "Have you notified everyone in the cell? Say 'confirmed' to continue." },
+        { "n": 2, "text": "Press EMERGENCY STOP and move the machine to a safe, de-energized state.", "prompt": "Is the E-stop pressed and the machine stopped?" },
+        { "n": 3, "text": "Open and lock the main electrical disconnect; apply your personal lock and tag.", "prompt": "Is your personal lock and tag on the main disconnect?" },
+        { "n": 4, "text": "Bleed hydraulic and pneumatic pressure to zero (including through-spindle coolant).", "prompt": "Are hydraulic and pneumatic pressures at zero?" },
+        { "n": 5, "text": "Block or lower any suspended axis to neutralize gravitational energy.", "prompt": "Is the Z-axis / head supported against drop?" },
+        { "n": 6, "text": "Verify zero energy: attempt a normal start and confirm nothing moves or energizes.", "prompt": "Did you try-start and confirm zero energy? This is the verification step." }
+      ],
+      "completion": "LOTO verified. The machine is safe to service. Re-energize only by reversing these steps."
+    },
+    "ppe": {
+      "check_type": "ppe",
+      "title": "Personal Protective Equipment (PPE)",
+      "aliases": ["ppe", "protective equipment", "safety gear"],
+      "hazard": "Flying chips, coolant mist, sharp tooling, pinch points, and noise.",
+      "require_verbal_confirmation": true,
+      "items": [
+        { "n": 1, "text": "Safety glasses with side shields on.", "prompt": "Eye protection on?" },
+        { "n": 2, "text": "No loose clothing, gloves removed near rotating spindle, long hair tied back.", "prompt": "Snag hazards controlled? Gloves off near the spindle?" },
+        { "n": 3, "text": "Cut-resistant gloves available for chip and edge handling (off during machine motion).", "prompt": "Cut gloves on hand for handling?" },
+        { "n": 4, "text": "Hearing protection if sustained noise is above the limit.", "prompt": "Hearing protection ready?" },
+        { "n": 5, "text": "Steel-toe footwear and a clear, dry footing around the machine.", "prompt": "Footwear and footing good?" }
+      ],
+      "completion": "PPE confirmed. Clear to proceed."
+    },
+    "pre_start": {
+      "check_type": "pre_start",
+      "title": "Pre-start safety check",
+      "aliases": ["pre start", "prestart", "pre-start", "start up check", "before start"],
+      "hazard": "Unexpected motion on power-up; tooling left in the work envelope.",
+      "require_verbal_confirmation": true,
+      "items": [
+        { "n": 1, "text": "Work envelope clear of tools, rags, and fixtures.", "prompt": "Envelope clear?" },
+        { "n": 2, "text": "All guards and the spindle door in place and closed.", "prompt": "Guards closed?" },
+        { "n": 3, "text": "Way lube and coolant levels adequate.", "prompt": "Lube and coolant levels good?" },
+        { "n": 4, "text": "E-stop functional and reset; nobody inside the cell.", "prompt": "E-stop tested and cell clear?" }
+      ],
+      "completion": "Pre-start checks complete. Cleared to power and home the machine."
+    }
+  }
+}

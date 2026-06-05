@@ -1,0 +1,158 @@
+{
+  "_comment": "FORGE parts + torque catalog for the PL45LM-class turn-mill. Synthetic part numbers and distilled specs — NOT reproduced from any manufacturer manual. Torque values are plausible engineering figures authored for this demo, not OEM data. The model must NEVER state a part number or torque from memory; it must call lookup_part / lookup_torque.",
+  "parts": {
+    "drawbar": {
+      "name": "Spindle drawbar",
+      "part_number": "PL45-SP-DRB-040",
+      "aliases": ["draw bar", "draw-bar", "pull bar", "spindle drawbar"],
+      "assembly": "spindle",
+      "spec": "BT40 drawbar, disc-spring clamp stack, 20 mm bore for through-spindle coolant",
+      "clamp_force_kn": 13.5,
+      "service_interval_hours": 4000,
+      "notes": "Unclamp delay is the most common drawbar symptom; inspect disc springs and the unclamp cylinder."
+    },
+    "drawbar_disc_springs": {
+      "name": "Drawbar disc spring stack (Belleville)",
+      "part_number": "PL45-SP-DSP-018",
+      "aliases": ["disc springs", "belleville washers", "spring stack"],
+      "assembly": "spindle",
+      "spec": "18-element Belleville stack, replace as a matched set; free length 96.0 mm (replace below 90 mm)",
+      "service_interval_hours": 4000
+    },
+    "spindle_bearings": {
+      "name": "Spindle bearing pack (angular contact)",
+      "part_number": "PL45-SP-BRG-7014",
+      "aliases": ["spindle bearings", "bearing pack", "front bearings"],
+      "assembly": "spindle",
+      "spec": "Angular-contact set, grease-for-life, DBB front pair + single rear",
+      "service_interval_hours": 12000
+    },
+    "coolant_union": {
+      "name": "Through-spindle coolant union",
+      "part_number": "PL45-SP-CU-020",
+      "aliases": ["coolant union", "rotary union", "coolant seal"],
+      "assembly": "spindle",
+      "spec": "20 bar rotary union, replaceable carbon face seal",
+      "service_interval_hours": 6000
+    },
+    "tool_holder": {
+      "name": "BT40 tool holder",
+      "part_number": "PL45-TL-BT40-STD",
+      "aliases": ["toolholder", "tool holder", "holder", "BT40 holder"],
+      "assembly": "spindle",
+      "spec": "BT40 taper, standard pull stud P40T-I, balanced to G2.5 @ 8000 rpm"
+    },
+    "pull_stud": {
+      "name": "Pull stud (retention knob)",
+      "part_number": "PL45-TL-PS-40I",
+      "aliases": ["retention knob", "pull stud", "grip knob"],
+      "assembly": "spindle",
+      "spec": "P40T-I 45-degree retention knob for BT40"
+    },
+    "turret_index_motor": {
+      "name": "Turret indexing servo motor",
+      "part_number": "PL45-TU-IDX-2K0",
+      "aliases": ["index motor", "turret motor", "indexing servo"],
+      "assembly": "turret",
+      "spec": "2.0 kW servo, absolute encoder, bidirectional shortest-path indexing"
+    },
+    "turret_clamp_cylinder": {
+      "name": "Turret clamp hydraulic cylinder",
+      "part_number": "PL45-TU-CLP-050",
+      "aliases": ["clamp cylinder", "turret clamp"],
+      "assembly": "turret",
+      "spec": "50 bar clamp, curvic coupling lock"
+    },
+    "x_ballscrew": {
+      "name": "X-axis ballscrew",
+      "part_number": "PL45-AX-BSX-3210",
+      "aliases": ["x ballscrew", "x axis screw", "x-axis ballscrew"],
+      "assembly": "axes",
+      "spec": "32 mm dia, 10 mm lead, double-nut preloaded, C3 grade"
+    },
+    "x_servo_motor": {
+      "name": "X-axis servo motor",
+      "part_number": "PL45-AX-SVX-3K0",
+      "aliases": ["x servo", "x motor", "x-axis motor"],
+      "assembly": "axes",
+      "spec": "3.0 kW AC servo, 23-bit absolute encoder"
+    },
+    "linear_guide": {
+      "name": "Linear guideway block",
+      "part_number": "PL45-AX-LGW-035",
+      "aliases": ["linear guide", "guideway", "rail block", "way"],
+      "assembly": "axes",
+      "spec": "35 mm profile rail block, self-lubricating, 4 per axis"
+    },
+    "way_lube_pump": {
+      "name": "Centralized way-lube pump",
+      "part_number": "PL45-LB-WLP-001",
+      "aliases": ["lube pump", "way lube", "oiler"],
+      "assembly": "axes",
+      "spec": "Metered single-line lube, 3 MPa, ISO VG68 way oil"
+    }
+  },
+  "fasteners": {
+    "tool_holder_bolt": {
+      "name": "Tool-holder retention bolt",
+      "fastener_id": "tool_holder_bolt",
+      "aliases": ["tool holder bolt", "tool-holder bolt", "holder bolt", "tool holder bolts"],
+      "assembly": "spindle",
+      "size": "M6 x 1.0, class 12.9",
+      "torque_nm": 12,
+      "sequence": "Star pattern, 3 fasteners, 2 passes (50% then 100%)",
+      "lubrication": "Light oil on threads; do not exceed — alloy holder",
+      "notes": "Tightening to 12 Nm. Re-check after first tool change."
+    },
+    "spindle_cartridge_bolt": {
+      "name": "Spindle cartridge mounting bolt",
+      "fastener_id": "spindle_cartridge_bolt",
+      "aliases": ["spindle cartridge bolt", "cartridge bolt"],
+      "assembly": "spindle",
+      "size": "M10 x 1.5, class 12.9",
+      "torque_nm": 70,
+      "sequence": "Cross pattern, 6 bolts, 3 passes (40/70/100%)",
+      "lubrication": "Anti-seize on threads"
+    },
+    "drawbar_locknut": {
+      "name": "Drawbar disc-spring locknut",
+      "fastener_id": "drawbar_locknut",
+      "aliases": ["drawbar locknut", "draw bar nut", "spring stack nut"],
+      "assembly": "spindle",
+      "size": "M24 x 1.5 precision locknut",
+      "torque_nm": 120,
+      "sequence": "Single nut; set clamp force to 13.5 kN, then lock",
+      "lubrication": "Dry; verify clamp force with load cell after torque"
+    },
+    "turret_clamp_bolt": {
+      "name": "Turret curvic clamp bolt",
+      "fastener_id": "turret_clamp_bolt",
+      "aliases": ["turret clamp bolt", "curvic bolt"],
+      "assembly": "turret",
+      "size": "M8 x 1.25, class 10.9",
+      "torque_nm": 25,
+      "sequence": "Star pattern, 4 bolts, 2 passes",
+      "lubrication": "Light oil"
+    },
+    "motor_mount_bolt": {
+      "name": "Axis servo-motor mount bolt",
+      "fastener_id": "motor_mount_bolt",
+      "aliases": ["motor mount bolt", "servo mount bolt"],
+      "assembly": "axes",
+      "size": "M8 x 1.25, class 10.9",
+      "torque_nm": 25,
+      "sequence": "Cross pattern, 4 bolts, 2 passes",
+      "lubrication": "Dry"
+    },
+    "way_cover_screw": {
+      "name": "Telescoping way-cover screw",
+      "fastener_id": "way_cover_screw",
+      "aliases": ["way cover screw", "cover screw"],
+      "assembly": "axes",
+      "size": "M5 x 0.8, class 8.8",
+      "torque_nm": 6,
+      "sequence": "Even, hand-snug then 6 Nm",
+      "lubrication": "Dry"
+    }
+  }
+}
