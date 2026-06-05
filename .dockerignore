@@ -1,0 +1,17 @@
+# Keep the build context small. Dockerfile builds from the repo root.
+.git
+**/__pycache__
+**/.pytest_cache
+**/.mypy_cache
+backend/.venv
+backend/tests
+frontend/node_modules
+frontend/dist
+datasets/*.mp4
+datasets/*.mov
+datasets/*.webm
+**/.DS_Store
+.env
+.env.*
+docs
+deploy

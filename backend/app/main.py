@@ -11,10 +11,13 @@ Routes:
 from __future__ import annotations
 
 import logging
+import os
+from pathlib import Path
 
 from fastapi import FastAPI, WebSocket
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 
 from app.config import get_settings
 from app.data.catalog import catalog
@@ -83,3 +86,15 @@ def schematic(file: str) -> FileResponse | JSONResponse:
 async def ws_endpoint(websocket: WebSocket) -> None:
     bridge = RealtimeBridge(websocket)
     await bridge.run()
+
+
+# Serve the built field console (single-container deploy). API/WS routes above take
+# precedence; this SPA mount (html=True) catches everything else. Set FORGE_FRONTEND_DIST
+# or place the build at ../frontend/dist.
+_dist = Path(os.environ.get("FORGE_FRONTEND_DIST", Path(__file__).resolve().parents[2] / "frontend" / "dist"))
+if _dist.is_dir():
+    app.mount("/", StaticFiles(directory=str(_dist), html=True), name="frontend")
+    logger.info("serving frontend from %s", _dist)
+else:
+    logger.info("frontend dist not found at %s (dev mode serves it via Vite)", _dist)
+

@@ -1,0 +1,34 @@
+# FORGE on Alibaba Cloud ECS. Pull the image from ACR and run it behind the nginx
+# config in this folder. `docker compose up -d` after `docker login` to ACR.
+services:
+  forge:
+    image: ${ACR_REGISTRY}/${ACR_NAMESPACE}/forge:${TAG:-latest}
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      # Qwen Cloud / DashScope
+      DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY}
+      FORGE_REGION: ${FORGE_REGION:-intl}
+      FORGE_REALTIME_MODEL: ${FORGE_REALTIME_MODEL:-qwen3-omni-flash-realtime}
+      FORGE_VOICE: ${FORGE_VOICE:-Cherry}
+      # Alibaba Cloud OSS (assets + deployment proof)
+      ALIBABA_CLOUD_ACCESS_KEY_ID: ${ALIBABA_CLOUD_ACCESS_KEY_ID}
+      ALIBABA_CLOUD_ACCESS_KEY_SECRET: ${ALIBABA_CLOUD_ACCESS_KEY_SECRET}
+      OSS_BUCKET: ${OSS_BUCKET}
+      OSS_ENDPOINT: ${OSS_ENDPOINT}
+      OSS_REGION: ${OSS_REGION}
+      FORGE_ALLOWED_ORIGINS: ${FORGE_ALLOWED_ORIGINS:-*}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/healthz').status==200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  nginx:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    depends_on: [forge]
+    network_mode: host   # so 127.0.0.1:8000 reaches the forge container's host port
+    volumes:
+      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
