@@ -267,6 +267,13 @@ export function useRealtimeSocket(config: RuntimeConfig | null) {
     return () => window.clearInterval(id);
   }, [visionStreaming, config, send]);
 
+  // Tell the server when vision is on/off so it forwards frames + adds vision context.
+  // (The server drops image frames unless it knows vision is active.)
+  useEffect(() => {
+    if (state.conn !== "connected") return;
+    send({ type: "control", action: visionStreaming ? "vision_on" : "vision_off" });
+  }, [visionStreaming, state.conn, send]);
+
   // session countdown
   useEffect(() => {
     if (state.conn !== "connected") return;

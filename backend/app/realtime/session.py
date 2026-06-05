@@ -102,9 +102,13 @@ class QwenRealtimeSession:
         self._audio_sent = True
 
     async def append_image(self, jpeg: bytes) -> None:
-        # The API rejects image frames before any audio has been sent.
-        if not self._audio_sent or not jpeg:
+        if not jpeg:
             return
+        # The API rejects image frames before any audio has been sent. If the technician
+        # turned on vision without speaking yet, prime with a short silence so the frame
+        # is accepted (silence doesn't trigger a VAD response).
+        if not self._audio_sent:
+            await self.append_audio(b"\x00" * 640)  # 20 ms of 16 kHz mono PCM16 silence
         await self._send(events.input_image_append(jpeg))
 
     async def commit_audio(self) -> None:

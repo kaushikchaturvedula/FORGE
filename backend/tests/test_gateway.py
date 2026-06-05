@@ -6,6 +6,7 @@ product code) to exercise the bridge logic without a network or API key.
 
 from __future__ import annotations
 
+import base64
 import json
 
 import pytest
@@ -22,12 +23,19 @@ class FakeSession:
         self.updates = []
         self.results = []
         self.closed = False
+        self.connected = True
 
     async def connect(self):  # pragma: no cover - not used here
         pass
 
     async def update_session(self, *, instructions, tools, voice=None, enable_vad=True):
         self.updates.append((instructions, tools))
+
+    async def append_audio(self, pcm):
+        pass
+
+    async def append_image(self, jpeg):
+        self.images = getattr(self, "images", 0) + 1
 
     async def send_function_result(self, call_id, output):
         self.results.append((call_id, output))
@@ -56,6 +64,8 @@ class FakeWS:
 
 @pytest.fixture
 def bridge():
+    import asyncio
+
     b = RealtimeBridge.__new__(RealtimeBridge)  # skip __init__ (no settings/network)
     from app.config import get_settings
     from app.agents.orchestrator import Orchestrator
@@ -67,6 +77,10 @@ def bridge():
     b.dedup = _DedupCache()
     b._closing = False
     b._connected_at = 0.0
+    b._had_activity = False
+    b._connect_failures = 0
+    b._want_session = asyncio.Event()
+    b._connect_lock = asyncio.Lock()
     return b
 
 
@@ -106,6 +120,21 @@ async def test_threshold_alert_emitted_to_browser(bridge):
     call = FunctionCallDone(call_id="c4", name="record_measurement", arguments={"type": "spindle_torque", "value": 65, "unit": "Nm"})
     await bridge._handle_tool_call(call)
     assert any(m["type"] == "alert" and m["level"] == "alert" for m in bridge.ws.json_sent)
+
+
+async def test_vision_on_control_forwards_frames_and_updates_session(bridge):
+    # Manual vision: the client says vision is on -> server must set state, re-push the
+    # session (with the vision banner), and then forward image frames.
+    await bridge._handle_client_json(json.dumps({"type": "control", "action": "vision_on"}))
+    assert bridge.orch.state.vision_active is True
+    assert any("LIVE VISION IS ON" in instr for instr, _ in bridge.session.updates)
+
+    img = base64.b64encode(b"\xff\xd8\xff\xee").decode()
+    await bridge._handle_client_json(json.dumps({"type": "image", "jpeg_b64": img}))
+    assert getattr(bridge.session, "images", 0) >= 1  # frame forwarded to the model
+
+    await bridge._handle_client_json(json.dumps({"type": "control", "action": "vision_off"}))
+    assert bridge.orch.state.vision_active is False
 
 
 # ── resume summary ───────────────────────────────────────────────────────────

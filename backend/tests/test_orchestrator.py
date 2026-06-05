@@ -39,6 +39,17 @@ def test_transfer_to_field_advisor_activates_vision():
     assert any(m["type"] == "control" and m["action"] == "activate_vision" for m in out.frontend)
 
 
+def test_vision_banner_injected_only_when_vision_active():
+    o = make()
+    assert "LIVE VISION IS ON" not in o.initial_config()[0]  # off by default
+    out = o.process_tool_call("transfer_to_field_advisor", {})
+    instructions, _ = out.session_update
+    assert "LIVE VISION IS ON" in instructions          # banner travels with the transfer
+    assert "LIVE VISION IS ON" in o.initial_config()[0]  # and on reconnect config
+    o.process_tool_call("return_to_orchestrator", {})
+    assert "LIVE VISION IS ON" not in o.initial_config()[0]  # gone after vision off
+
+
 def test_return_from_field_advisor_deactivates_vision():
     o = make()
     o.process_tool_call("transfer_to_field_advisor", {})

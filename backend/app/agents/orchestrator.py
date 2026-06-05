@@ -30,6 +30,26 @@ from app.agents.tools.handlers import ToolResult
 from app.grounding.callbacks import ToolMetrics, execute_tool
 from app.ws import protocol
 
+# Injected into whatever agent is active while the live video feed is on, so the model
+# knows it genuinely has the image and describes it instead of denying it. This travels
+# with the session.update regardless of which agent is active (manual 👁 vision works
+# even on the Orchestrator, not only after a transfer to the Field Advisor).
+VISION_BANNER = (
+    "\n\n=== LIVE VISION IS ON ===\n"
+    "You are receiving the live camera feed RIGHT NOW as a stream of images. You CAN see. "
+    "When the technician asks what you see (\"what do you see\", \"what's on the screen\", "
+    "\"look at this\", \"can you see the video\"), describe exactly what is visible in the "
+    "current frame — the machine and its model if readable, the spindle/turret and tool "
+    "engagement, chips, coolant, gauges and panel text, part numbers, and any damage or "
+    "leak — specifically and grounded in the image. "
+    "NEVER reply that you cannot see, that you only have an abstract 'live feed', or that "
+    "you can't see 'the video on the screen'. The feed IS your view: the technician may be "
+    "pointing a camera at the machine or feeding a recorded clip as a stand-in — treat it "
+    "the same and just describe what is actually there. If a frame is blurry or the subject "
+    "is out of view, say so briefly and ask them to steady or move the view. Describe only "
+    "what is actually in the frame — do not invent details."
+)
+
 
 @dataclass
 class ToolOutcome:
@@ -54,7 +74,12 @@ class Orchestrator:
         return self.state.active_agent
 
     def initial_config(self) -> tuple[str, list[dict[str, Any]]]:
-        return session_config(self.active_agent)
+        instructions, tools = session_config(self.active_agent)
+        return self._with_vision(instructions), tools
+
+    def _with_vision(self, instructions: str) -> str:
+        """Append the vision banner when the live feed is active."""
+        return instructions + VISION_BANNER if self.state.vision_active else instructions
 
     # ── tool-call entry point ────────────────────────────────────────────────
     def process_tool_call(self, name: str, args: dict | None) -> ToolOutcome:
@@ -77,7 +102,6 @@ class Orchestrator:
 
         self.state.active_agent = target
         agent = AGENTS[target]
-        instructions, tools = session_config(target)
 
         vision_change = None
         frontend: list[dict[str, Any]] = [
@@ -91,6 +115,10 @@ class Orchestrator:
             self.state.vision_active = False
             vision_change = "deactivate"
             frontend.append(protocol.control("deactivate_vision"))
+
+        # Compose instructions AFTER the vision toggle so the banner reflects the new state.
+        instructions, tools = session_config(target)
+        instructions = self._with_vision(instructions)
 
         return ToolOutcome(
             model_output={"transferred_to": target, "now_acting_as": agent.display},

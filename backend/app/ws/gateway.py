@@ -189,8 +189,11 @@ class RealtimeBridge:
             return
         kind = payload.get("type")
         if kind == protocol.IMAGE:
-            # Frames only matter while the Field Advisor is active (token control).
-            if self.orch.state.vision_active and payload.get("jpeg_b64"):
+            # The client is the token gate: it only streams frames while vision is on
+            # (manual 👁 toggle or the agent-driven activate_vision). So forward whatever
+            # arrives — gating here on server vision_active was silently dropping the
+            # manual-vision frames. vision_active is used only to add the prompt banner.
+            if payload.get("jpeg_b64"):
                 try:
                     jpeg = base64.b64decode(payload["jpeg_b64"])
                 except (ValueError, TypeError):
@@ -202,11 +205,21 @@ class RealtimeBridge:
                     except Exception as exc:  # noqa: BLE001
                         logger.debug("append_image dropped: %r", exc)
         elif kind == protocol.CONTROL:
-            if payload.get("action") == "barge_in" and self.session.connected:
+            action = payload.get("action")
+            if action == "barge_in" and self.session.connected:
                 try:
                     await self.session.cancel_response()
                 except Exception as exc:  # noqa: BLE001
                     logger.debug("cancel_response: %r", exc)
+            elif action in ("vision_on", "vision_off"):
+                # The client (manual 👁 toggle or the agent-driven activate_vision) tells
+                # us vision is on/off. This is what lets the gateway FORWARD frames and
+                # inject the vision banner — without it, frames were silently dropped.
+                self.orch.state.vision_active = action == "vision_on"
+                logger.info("vision %s", "on" if self.orch.state.vision_active else "off")
+                if self.session.connected:
+                    instructions, tools = self.orch.initial_config()
+                    await self.session.update_session(instructions=instructions, tools=tools)
 
     # ── downstream: Qwen -> browser (lazy connect + resume) ──────────────────
     async def _downstream(self) -> None:
