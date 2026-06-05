@@ -1,0 +1,99 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1020 660" width="1020" height="660" font-family="Inter, system-ui, sans-serif">
+  <rect width="1020" height="660" fill="#0a0e14"/>
+  <text x="24" y="34" fill="#e5edf5" font-size="20" font-weight="700">FORGE — Field Operations Real-time Guidance Engine</text>
+  <text x="24" y="54" fill="#7d8da3" font-size="13">One Qwen-Omni-Realtime session · server-side 9-agent router · grounded on bundled CNC catalogs · on Alibaba Cloud</text>
+
+  <style>
+    .box{fill:#111722;stroke:#1e2733;stroke-width:1.5;rx:8}
+    .t{fill:#e5edf5;font-size:13px}
+    .s{fill:#7d8da3;font-size:11px}
+    .h{fill:#e5edf5;font-size:13px;font-weight:700}
+    .flow{stroke:#5b6b80;stroke-width:1.5;fill:none;marker-end:url(#arrow)}
+    .audio{stroke:#7c3aed}
+    .vision{stroke:#06b6d4}
+  </style>
+  <defs>
+    <marker id="arrow" markerWidth="9" markerHeight="9" refX="7" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L7,3 L0,6 z" fill="#5b6b80"/>
+    </marker>
+  </defs>
+
+  <!-- Browser -->
+  <rect class="box" x="24" y="90" width="250" height="180" rx="8"/>
+  <text class="h" x="40" y="114">Browser — Field Console</text>
+  <text class="s" x="40" y="136">React · Vite · Tailwind</text>
+  <rect class="box" x="40" y="150" width="100" height="34" rx="6"/>
+  <text class="t" x="50" y="171">🎙 Mic 16 kHz</text>
+  <rect class="box" x="150" y="150" width="108" height="34" rx="6"/>
+  <text class="t" x="160" y="171">📷 Cam 1 fps</text>
+  <rect class="box" x="40" y="192" width="218" height="30" rx="6"/>
+  <text class="s" x="50" y="211">Panels + HUD (routing · transcript · metrics)</text>
+  <rect class="box" x="40" y="228" width="218" height="30" rx="6"/>
+  <text class="s" x="50" y="247">🔊 24 kHz player · barge-in drain</text>
+
+  <!-- Gateway -->
+  <rect class="box" x="330" y="90" width="300" height="290" rx="8"/>
+  <text class="h" x="346" y="114">FastAPI Gateway (ECS)</text>
+  <text class="s" x="346" y="134">dual async tasks per connection</text>
+  <rect class="box" x="346" y="146" width="268" height="40" rx="6"/>
+  <text class="t" x="356" y="164">upstream: PCM ~100ms · JPEG (vision-gated)</text>
+  <text class="s" x="356" y="179">to realtime session</text>
+  <rect class="box" x="346" y="194" width="268" height="40" rx="6"/>
+  <text class="t" x="356" y="212">downstream: audio · transcripts · tool calls</text>
+  <text class="s" x="356" y="227">FIRST_EXCEPTION teardown</text>
+  <rect class="box" x="346" y="242" width="268" height="34" rx="6"/>
+  <text class="s" x="356" y="263">4 s tool dedup · session resumption (≤120 min)</text>
+
+  <!-- Orchestrator -->
+  <rect class="box" x="346" y="286" width="268" height="84" rx="6"/>
+  <text class="h" x="356" y="306">Orchestrator — single-session router</text>
+  <text class="s" x="356" y="324">transfer = session.update (instructions + tools)</text>
+  <text class="s" x="356" y="340">9 agents: orchestrator · briefing · safety ·</text>
+  <text class="s" x="356" y="356">schematic · diagnostic · parts · procedure ·</text>
+  <text class="s" x="356" y="372">documentation · handoff · field_advisor 👁</text>
+
+  <!-- Grounding + data -->
+  <rect class="box" x="330" y="396" width="300" height="100" rx="8"/>
+  <text class="h" x="346" y="420">Grounding + CNC Catalogs</text>
+  <text class="s" x="346" y="440">whitelists · before/after callbacks ·</text>
+  <text class="s" x="346" y="456">tool-only facts · LOTO verbal gating</text>
+  <text class="s" x="346" y="476">AI4I telemetry · parts · procedures · safety ·</text>
+  <text class="s" x="346" y="492">SVG schematics (PL45LM turn-mill)</text>
+
+  <!-- Qwen Cloud -->
+  <rect class="box" x="690" y="90" width="306" height="150" rx="8" stroke="#7c3aed"/>
+  <text class="h" x="706" y="114">Qwen Cloud — Model Studio / DashScope</text>
+  <rect class="box" x="706" y="130" width="274" height="44" rx="6"/>
+  <text class="t" x="716" y="150">qwen-omni-realtime (WebSocket)</text>
+  <text class="s" x="716" y="166">audio in/out · function calling · image in</text>
+  <rect class="box" x="706" y="182" width="274" height="44" rx="6"/>
+  <text class="s" x="716" y="200">server VAD · semantic interruption (barge-in)</text>
+  <text class="s" x="716" y="216">in: 16 kHz PCM · out: 24 kHz PCM16</text>
+
+  <!-- Alibaba Cloud infra -->
+  <rect class="box" x="690" y="262" width="306" height="234" rx="8" stroke="#ff6a00"/>
+  <text class="h" x="706" y="286">Alibaba Cloud</text>
+  <rect class="box" x="706" y="300" width="274" height="40" rx="6"/>
+  <text class="t" x="716" y="319">ECS — long-lived WebSocket host</text>
+  <text class="s" x="716" y="334">nginx proxy_read_timeout 7800s</text>
+  <rect class="box" x="706" y="348" width="274" height="44" rx="6"/>
+  <text class="t" x="716" y="367">OSS — CNC video + schematics (oss2)</text>
+  <text class="s" x="716" y="383">/cloud/health proves live region</text>
+  <rect class="box" x="706" y="400" width="274" height="40" rx="6"/>
+  <text class="t" x="716" y="419">ACR — container image</text>
+  <text class="s" x="716" y="434">GitHub Actions: build → push → ECS rollout</text>
+  <rect class="box" x="706" y="448" width="274" height="38" rx="6"/>
+  <text class="s" x="716" y="471">env: DASHSCOPE_API_KEY · ALIBABA_CLOUD_* · OSS_*</text>
+
+  <!-- flows -->
+  <path class="flow audio" d="M274 175 L330 175"/>
+  <path class="flow vision" d="M274 230 L330 220"/>
+  <path class="flow" d="M620 200 L690 165"/>
+  <path class="flow" d="M690 175 L626 200"/>
+  <path class="flow" d="M480 380 L480 396"/>
+  <path class="flow" d="M630 235 L690 360"/>
+  <text class="s" x="276" y="168" fill="#a78bfa">audio</text>
+  <text class="s" x="276" y="246" fill="#22b8cf">frames</text>
+  <text class="s" x="636" y="150">realtime WS</text>
+  <text class="s" x="636" y="300">assets via oss2</text>
+</svg>
