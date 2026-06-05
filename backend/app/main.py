@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import logging
 import os
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, WebSocket
@@ -29,7 +30,37 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname
 logger = logging.getLogger("forge")
 
 settings = get_settings()
-app = FastAPI(title="FORGE", version="0.1.0", description="Field Operations Real-time Guidance Engine")
+
+
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    """Log the runtime posture. FORGE runs locally with only DASHSCOPE_API_KEY set —
+    Alibaba Cloud OSS/ECS credentials are OPTIONAL and only enable the cloud-asset
+    fetch and the OSS half of /cloud/health. Nothing here touches the network."""
+    if settings.realtime_configured:
+        logger.info("Realtime ready: model=%s region=%s", settings.realtime_model, settings.region)
+    else:
+        logger.warning(
+            "DASHSCOPE_API_KEY is not set — the voice loop is disabled until you add it to "
+            "backend/.env. The backend, /healthz, /api/config, schematics, and the frontend "
+            "still run normally."
+        )
+    if settings.oss_configured:
+        logger.info("OSS configured: bucket=%s endpoint=%s", settings.oss_bucket, settings.oss_endpoint)
+    else:
+        logger.info(
+            "OSS not configured — this is OPTIONAL for local dev. Cloud asset fetch and the OSS "
+            "section of /cloud/health are disabled; everything else runs with only DASHSCOPE_API_KEY."
+        )
+    yield
+
+
+app = FastAPI(
+    title="FORGE",
+    version="0.1.0",
+    description="Field Operations Real-time Guidance Engine",
+    lifespan=lifespan,
+)
 
 app.add_middleware(
     CORSMiddleware,

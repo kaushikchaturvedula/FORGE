@@ -91,16 +91,18 @@ datasets/   source data on disk (AI4I CSV bundled; test videos gitignored)
 
 ## Quickstart (local development)
 
-> Requires real Alibaba Cloud Model Studio credentials in `backend/.env`
-> (copy from [.env.example](.env.example)). FORGE talks to the live
-> `Qwen-Omni-Realtime` model — there is no offline/mock mode.
+> **Only `DASHSCOPE_API_KEY` is required to run locally.** FORGE talks to the live
+> `Qwen-Omni-Realtime` model (there is no offline/mock mode), but **Alibaba Cloud
+> OSS/ECS credentials are optional** — without them the backend, frontend, tests, and
+> the full voice loop all run; only the cloud asset-fetch and the OSS half of
+> `/cloud/health` are disabled (logged as an info line at startup, never a crash).
 
 ```bash
 # 1. Backend
 cd backend
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
-cp ../.env.example .env          # then fill in DASHSCOPE_API_KEY etc.
+echo "DASHSCOPE_API_KEY=sk-..." > .env   # the only var needed for local dev
 uvicorn app.main:app --reload --port 8000
 
 # 2. Frontend (separate terminal)
