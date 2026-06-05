@@ -22,6 +22,7 @@ from fastapi.staticfiles import StaticFiles
 from app.config import get_settings
 from app.data.catalog import catalog
 from app.data.catalog import SCHEMATICS_DIR
+from app.realtime.connectors import connector_status
 from app.ws.gateway import RealtimeBridge
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
@@ -56,6 +57,7 @@ def healthz() -> dict[str, object]:
         "realtime_configured": settings.realtime_configured,
         "model": settings.realtime_model,
         "region": settings.region,
+        "connectors": connector_status(),
     }
 
 

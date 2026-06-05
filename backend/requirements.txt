@@ -10,12 +10,18 @@ python-dotenv==1.0.1
 pydantic==2.10.4
 pydantic-settings==2.7.1
 
-# Qwen Cloud — DashScope realtime omni + AgentScope (connector/optics)
-dashscope==1.23.9
-agentscope==2.0.0
+# Qwen Cloud — official DashScope SDK (idiomatic connector; the production bridge uses
+# the direct realtime WebSocket protocol in app/realtime/session.py for fine-grained
+# tool/image control — see app/realtime/connectors.py).
+dashscope>=1.23.9
 
 # Alibaba Cloud — OSS object storage (deployment proof)
-oss2==2.19.1
+oss2>=2.18.0
+
+# Optional: AgentScope (Alibaba's agent framework) as an alternative realtime connector.
+# Not on the critical path and version availability varies, so install separately if
+# you want the AgentScope-idiomatic path:  pip install agentscope
+# agentscope>=1.0
 
 # Data handling
 # (catalogs are parsed from CSV/JSON with the stdlib csv/json modules — no pandas
