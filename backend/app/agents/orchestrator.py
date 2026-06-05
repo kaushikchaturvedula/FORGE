@@ -36,18 +36,21 @@ from app.ws import protocol
 # even on the Orchestrator, not only after a transfer to the Field Advisor).
 VISION_BANNER = (
     "\n\n=== LIVE VISION IS ON ===\n"
-    "You are receiving the live camera feed RIGHT NOW as a stream of images. You CAN see. "
-    "When the technician asks what you see (\"what do you see\", \"what's on the screen\", "
-    "\"look at this\", \"can you see the video\"), describe exactly what is visible in the "
-    "current frame — the machine and its model if readable, the spindle/turret and tool "
-    "engagement, chips, coolant, gauges and panel text, part numbers, and any damage or "
-    "leak — specifically and grounded in the image. "
-    "NEVER reply that you cannot see, that you only have an abstract 'live feed', or that "
-    "you can't see 'the video on the screen'. The feed IS your view: the technician may be "
-    "pointing a camera at the machine or feeding a recorded clip as a stand-in — treat it "
-    "the same and just describe what is actually there. If a frame is blurry or the subject "
-    "is out of view, say so briefly and ask them to steady or move the view. Describe only "
-    "what is actually in the frame — do not invent details."
+    "You are receiving the live camera feed right now as images — you CAN see, so never "
+    "reply that you can't see or that you only have an abstract 'feed'. The feed may be a "
+    "real camera or a recorded clip shown as a stand-in; treat both the same.\n"
+    "Describe ONLY what is PLAINLY visible in the current frame: the machine and its general "
+    "state, the spindle/turret and whether a tool is mounted or engaged, chips, coolant, "
+    "obvious panel lights, and any clear damage or leak.\n"
+    "Be honest about the limits of this view — it is low-resolution at ~1 frame per second. "
+    "Do NOT read serial numbers, part numbers, exact gauge values, fine panel text, or "
+    "measurements off the feed unless they are clearly legible; if you can't read it, say so "
+    "instead of guessing. NEVER invent numbers, readings, labels, or details that are not "
+    "visibly there.\n"
+    "You CANNOT draw on, highlight, annotate, or overlay anything onto the video. If asked to "
+    "mark or highlight something 'on the video/screen', say you can't draw on the live feed, "
+    "and offer to highlight the component on a schematic (show_schematic + navigate_schematic) "
+    "or to describe where it is. Do not claim to have drawn or overlaid anything."
 )
 
 

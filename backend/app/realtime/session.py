@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from typing import Any, AsyncIterator
 
 import websockets
@@ -35,6 +36,7 @@ class QwenRealtimeSession:
         self.settings = settings or get_settings()
         self._ws: websockets.WebSocketClientProtocol | None = None
         self._audio_sent = False  # image frames require audio-first per the API
+        self._last_audio_at = 0.0  # for re-priming silence across turn boundaries
         self.session_id: str | None = None
 
     # ── lifecycle ────────────────────────────────────────────────────────────
@@ -100,14 +102,16 @@ class QwenRealtimeSession:
             return
         await self._send(events.input_audio_append(pcm))
         self._audio_sent = True
+        self._last_audio_at = time.monotonic()
 
     async def append_image(self, jpeg: bytes) -> None:
         if not jpeg:
             return
-        # The API rejects image frames before any audio has been sent. If the technician
-        # turned on vision without speaking yet, prime with a short silence so the frame
-        # is accepted (silence doesn't trigger a VAD response).
-        if not self._audio_sent:
+        # The API rejects an image unless audio precedes it in the current buffer. Server
+        # VAD commits the buffer after each turn, so "audio was sent once" isn't enough —
+        # if no real audio has flowed recently (vision-only, or between utterances), prime
+        # a short silence so the frame is accepted. Silence doesn't trigger a VAD response.
+        if not self._audio_sent or (time.monotonic() - self._last_audio_at) > 0.4:
             await self.append_audio(b"\x00" * 640)  # 20 ms of 16 kHz mono PCM16 silence
         await self._send(events.input_image_append(jpeg))
 
