@@ -1,25 +1,33 @@
 import { useEffect, useRef, useState } from "react";
 import { useCamera } from "../../hooks/useCamera";
+import { useScreenShare } from "../../hooks/useScreenShare";
 import type { FrameProvider } from "../../hooks/useRealtimeSocket";
 
 export function FieldVisionPanel({
   active,
   width,
   height,
+  screen,
   perception,
   registerFrameProvider,
+  registerScreenProvider,
 }: {
   active: boolean;
   width: number;
   height: number;
+  screen: { width: number; height: number };
   perception: string;
   registerFrameProvider: (fn: FrameProvider | null) => void;
+  registerScreenProvider: (fn: FrameProvider | null) => void;
 }) {
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
   const [deviceId, setDeviceId] = useState<string | undefined>(undefined);
   const { videoRef, getFrame } = useCamera(active, width, height, deviceId);
+  const scr = useScreenShare(screen.width, screen.height);
   const providerRef = useRef(getFrame);
   providerRef.current = getFrame;
+  const screenRef = useRef(scr.getFrame);
+  screenRef.current = scr.getFrame;
 
   // Register a stable frame provider for the 1 fps sender.
   useEffect(() => {
@@ -27,6 +35,13 @@ export function FieldVisionPanel({
     else registerFrameProvider(null);
     return () => registerFrameProvider(null);
   }, [active, registerFrameProvider]);
+
+  // Screen frames flow only when both vision is active AND the user is sharing.
+  useEffect(() => {
+    if (active && scr.active) registerScreenProvider(() => screenRef.current());
+    else registerScreenProvider(null);
+    return () => registerScreenProvider(null);
+  }, [active, scr.active, registerScreenProvider]);
 
   // Enumerate cameras so the demo can pick "OBS Virtual Camera".
   useEffect(() => {
@@ -58,19 +73,30 @@ export function FieldVisionPanel({
           </div>
         )}
       </div>
-      {active && devices.length > 0 && (
-        <select
-          className="mt-2 rounded border border-forge-edge bg-forge-bg px-2 py-1 text-xs text-forge-text"
-          value={deviceId ?? ""}
-          onChange={(e) => setDeviceId(e.target.value || undefined)}
-        >
-          <option value="">Default camera</option>
-          {devices.map((d) => (
-            <option key={d.deviceId} value={d.deviceId}>
-              {d.label || `Camera ${d.deviceId.slice(0, 6)}`}
-            </option>
-          ))}
-        </select>
+      {active && (
+        <div className="mt-2 flex items-center gap-2">
+          {devices.length > 0 && (
+            <select
+              className="flex-1 rounded border border-forge-edge bg-forge-bg px-2 py-1 text-xs text-forge-text"
+              value={deviceId ?? ""}
+              onChange={(e) => setDeviceId(e.target.value || undefined)}
+            >
+              <option value="">Default camera</option>
+              {devices.map((d) => (
+                <option key={d.deviceId} value={d.deviceId}>
+                  {d.label || `Camera ${d.deviceId.slice(0, 6)}`}
+                </option>
+              ))}
+            </select>
+          )}
+          <button
+            onClick={() => (scr.active ? scr.stop() : void scr.start())}
+            className={`rounded px-2 py-1 text-xs ${scr.active ? "bg-forge-vision text-black" : "border border-forge-edge text-forge-muted"}`}
+            title="Share a SCADA / monitoring screen for FORGE to read"
+          >
+            🖥 {scr.active ? "Sharing" : "Share screen"}
+          </button>
+        </div>
       )}
     </div>
   );

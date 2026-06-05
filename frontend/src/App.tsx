@@ -25,7 +25,7 @@ const ACCENTS: Record<string, string> = {
 export default function App() {
   const [config, setConfig] = useState<RuntimeConfig | null>(null);
   const [configError, setConfigError] = useState<string | null>(null);
-  const { state, connect, toggleMic, registerFrameProvider, bargeIn, micActive } = useRealtimeSocket(config);
+  const { state, connect, toggleMic, registerFrameProvider, registerScreenProvider, bargeIn, micActive } = useRealtimeSocket(config);
 
   useEffect(() => {
     fetchConfig().then(setConfig).catch((e) => setConfigError(String(e)));
@@ -109,8 +109,10 @@ export default function App() {
             active={state.visionActive}
             width={config?.vision.width ?? 320}
             height={config?.vision.height ?? 240}
+            screen={config?.vision.screen ?? { width: 768, height: 768 }}
             perception={lastAssistant}
             registerFrameProvider={registerFrameProvider}
+            registerScreenProvider={registerScreenProvider}
           />
         );
       default:

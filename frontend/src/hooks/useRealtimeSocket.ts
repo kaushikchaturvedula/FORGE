@@ -140,6 +140,7 @@ export function useRealtimeSocket(config: RuntimeConfig | null) {
   const recorder = useRef<MicRecorder | null>(null);
   const userClosed = useRef(false);
   const frameProvider = useRef<FrameProvider | null>(null);
+  const screenProvider = useRef<FrameProvider | null>(null);
   const micOn = useRef(false);
 
   const send = useCallback((obj: unknown) => {
@@ -213,6 +214,10 @@ export function useRealtimeSocket(config: RuntimeConfig | null) {
     frameProvider.current = fn;
   }, []);
 
+  const registerScreenProvider = useCallback((fn: FrameProvider | null) => {
+    screenProvider.current = fn;
+  }, []);
+
   const bargeIn = useCallback(() => {
     player.current?.drain();
     send({ type: "control", action: "barge_in" });
@@ -225,6 +230,9 @@ export function useRealtimeSocket(config: RuntimeConfig | null) {
     const id = window.setInterval(() => {
       const frame = frameProvider.current?.();
       if (frame) send({ type: "image", jpeg_b64: frame });
+      // Optional SCADA screen frame (only sent while sharing is on).
+      const screen = screenProvider.current?.();
+      if (screen) send({ type: "image", jpeg_b64: screen });
     }, period);
     return () => window.clearInterval(id);
   }, [state.visionActive, config, send]);
@@ -240,7 +248,7 @@ export function useRealtimeSocket(config: RuntimeConfig | null) {
 
   const micActive = micOn.current;
   return useMemo(
-    () => ({ state, connect, disconnect, toggleMic, registerFrameProvider, bargeIn, micActive }),
-    [state, connect, disconnect, toggleMic, registerFrameProvider, bargeIn, micActive],
+    () => ({ state, connect, disconnect, toggleMic, registerFrameProvider, registerScreenProvider, bargeIn, micActive }),
+    [state, connect, disconnect, toggleMic, registerFrameProvider, registerScreenProvider, bargeIn, micActive],
   );
 }
