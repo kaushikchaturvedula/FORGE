@@ -130,8 +130,9 @@ class RealtimeBridge:
         self.sidecar = make_sidecar(self.settings)  # the brain (may be a no-op)
         self._history: list[dict[str, str]] = []  # rolling transcript for the brain
         self._bg_tasks: set[asyncio.Task] = set()  # background turn handlers
-        # Auto-response suppression: the realtime model only speaks responses WE create.
-        self._expect_response = False
+        self._turn_seq = 0  # bumped each user turn; drops stale brain replies
+        # Set when no realtime response is in flight, so a grounded SPEAK can be sequenced
+        # after the realtime model's own (ack/vision/chit-chat) response finishes.
         self._response_idle = asyncio.Event()
         self._response_idle.set()
 
@@ -326,16 +327,7 @@ class RealtimeBridge:
             await self._safe_send_json(protocol.state("thinking"))
         elif isinstance(evt, events.ResponseCreated):
             self._response_idle.clear()
-            if self._expect_response:
-                self._expect_response = False  # this response is ours — let it speak
-                await self._safe_send_json(protocol.state("speaking"))
-            else:
-                # Autonomous response from the realtime model — suppress it; the brain
-                # composes the grounded answer instead.
-                try:
-                    await self.session.cancel_response()
-                except Exception as exc:  # noqa: BLE001
-                    logger.debug("suppress auto-response: %r", exc)
+            await self._safe_send_json(protocol.state("speaking"))
         elif isinstance(evt, events.ResponseDone):
             self._response_idle.set()
             await self._safe_send_json(protocol.state("listening", self._remaining()))
@@ -366,14 +358,20 @@ class RealtimeBridge:
         await self._safe_send_json(protocol.transcript("user", text=text, final=True))
         if text.strip():
             self._history.append({"role": "user", "content": text})
-            # Handle the turn in the background so it never blocks audio playback.
-            task = asyncio.create_task(self._handle_turn(text))
+            self._turn_seq += 1
+            seq = self._turn_seq
+            # Handle the turn in the background so it never blocks audio playback. The
+            # realtime model ALSO auto-answers (vision/chit-chat directly, a tiny "One
+            # moment" ack for data); the brain then overrides DATA answers with a grounded
+            # SPEAK that the realtime model reads.
+            task = asyncio.create_task(self._handle_turn(text, seq))
             self._bg_tasks.add(task)
             task.add_done_callback(self._bg_tasks.discard)
 
-    async def _handle_turn(self, text: str) -> None:
-        """The brain composes the answer (running tools through _apply_tool), then we voice
-        it via the realtime model; vision questions are deferred to the realtime model."""
+    async def _handle_turn(self, text: str, seq: int) -> None:
+        """The brain runs tools (panels/routing) and composes the grounded DATA answer; we
+        voice it. Non-data turns (vision, chit-chat) it defers — the realtime model already
+        answered those itself."""
         if not self.sidecar.enabled or not self.session.connected:
             return
         try:
@@ -382,21 +380,22 @@ class RealtimeBridge:
             logger.warning("brain error: %r", exc)
             return
         logger.info("brain reply: kind=%s len=%d", reply.kind, len(reply.text))
+        if reply.kind == "speak" and reply.text:
+            await self._voice(reply.text, seq)
 
-        if reply.kind == "defer_vision":
-            await self._create_our_response()  # realtime model answers from the camera frame
-        elif reply.text:
-            await self.session.inject_message(f"SPEAK: {reply.text}", role="user")
-            await self._create_our_response()
-
-    async def _create_our_response(self) -> None:
-        """Ask the realtime model to speak — flagged so it is NOT suppressed. Waits for any
-        in-flight (suppressed) response to finish so we don't hit 'active response'."""
+    async def _voice(self, text: str, seq: int) -> None:
+        """Have the realtime model read a grounded answer — sequenced after its own ack so
+        we never collide ('Conversation already has an active response'). Dropped if a newer
+        turn has started."""
+        if seq != self._turn_seq:
+            return
         try:
             await asyncio.wait_for(self._response_idle.wait(), timeout=8.0)
         except asyncio.TimeoutError:
             pass
-        self._expect_response = True
+        if seq != self._turn_seq or not self.session.connected:
+            return  # a newer turn superseded this one
+        await self.session.inject_message(f"SPEAK: {text}", role="user")
         await self.session.create_response()
 
     # ── tool execution ────────────────────────────────────────────────────────

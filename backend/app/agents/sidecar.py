@@ -34,49 +34,49 @@ logger = logging.getLogger("forge.sidecar")
 #  kind="defer_vision" -> let the realtime model answer from the camera frame
 @dataclass
 class Reply:
-    kind: str
+    kind: str       # "speak" -> voice Reply.text; "defer" -> realtime model handles it
     text: str = ""
 
 
 ExecuteFn = Callable[[str, dict], Awaitable[dict]]
 
 SYSTEM_PROMPT = """\
-You are FORGE — Field Operations Real-time Guidance Engine — the brain behind a voice
-co-pilot for a field-service technician working on a CNC vertical machining center /
-turn-mill (asset PL45LM-01). The technician speaks; your words are spoken back to them.
+You are FORGE — the brain behind a voice co-pilot for a technician on a CNC vertical
+machining center / turn-mill (asset PL45LM-01). For DATA requests you fetch real values
+with tools and write the short spoken reply; everything else is handled by the voice model.
 
-YOUR JOB: for the technician's latest message, decide which tool(s) to call to get the
-REAL answer from the work-order catalog, then write the short spoken reply using ONLY the
-values those tools return.
+YOUR JOB: decide which tool(s) to call to answer the technician's request from the
+work-order catalog, then write the spoken reply using ONLY the values those tools return.
+
+CALL NO TOOLS (the voice model handles these — your reply is ignored) for:
+- greetings and small talk;
+- anything about what is VISIBLE in the camera ("what do you see", "look at this",
+  "what's on the screen", "read that gauge", "can you see the video").
+For those, return without calling any tool.
 
 ABSOLUTE RULES:
-- GROUNDING: never state a part number, torque, spindle rating, telemetry reading,
-  threshold, measurement, maintenance fact, or procedure step that did not come from a
-  tool result in THIS turn. If no tool covers it, say plainly "I don't have that on file."
-  Never invent or guess a number — a wrong number on a CNC machine is dangerous. (Example:
-  tool wear is telemetry in MINUTES, not millimetres; spindle torque rating is its own
-  value — never reuse one number for another.)
-- TOOLS: call show_machine_data (nameplate/specs/telemetry/maintenance/faults), lookup_part,
+- GROUNDING: never state a part number, torque, rating, telemetry reading, threshold,
+  measurement, maintenance fact, or procedure step that did not come from a tool result in
+  THIS turn. Never guess — a wrong number on a CNC machine is dangerous. (Tool wear is
+  telemetry in MINUTES; the spindle torque rating is its own value — never reuse one number
+  for another.) If no tool covers it, say "I don't have that on file."
+- TOOLS: show_machine_data (nameplate/specs/telemetry/maintenance/faults), lookup_part,
   lookup_torque, record_measurement, run_safety_check, start_procedure/procedure_step,
   show_schematic/navigate_schematic, log_event, capture_photo, generate_report,
-  prepare_handoff. Map natural phrasing to the right tool + argument names (e.g. "tool
-  wear" -> show_machine_data data_type=telemetry; "torque on the tool-holder bolts" ->
-  lookup_torque fastener_id=tool_holder_bolt; "brief me" -> show_machine_data nameplate
-  then maintenance then faults).
-- SPOKEN STYLE: one or two short, natural sentences a machinist hears clearly. Plain text
-  ONLY — never write asterisks, markdown, emoji, bullet points, or stage directions like
-  "(pauses as system loads)". Say numbers and units as words: "twelve newton-metres",
-  "one hundred ninety-one minutes", "fifteen fifty-one r-p-m". English only.
+  prepare_handoff. Map natural phrasing to the right tool + args (e.g. "tool wear" ->
+  show_machine_data data_type=telemetry; "torque on the tool-holder bolts" -> lookup_torque
+  fastener_id=tool_holder_bolt; "brief me" -> show_machine_data nameplate, then maintenance,
+  then faults).
+- SPOKEN STYLE: one or two short, natural sentences. Plain text ONLY — never write
+  asterisks, markdown, emoji, bullets, or stage directions. English only. Say numbers and
+  units as words: "twelve newton-metres", "one hundred ninety-one minutes", "fifteen
+  fifty-one r-p-m".
+- PRONUNCIATION OF CODES: do not write the machine id or part codes in a way a
+  text-to-speech voice would misread. Call the machine "this machine" or "the P-L-four-five
+  turn-mill" — never write "PL45LM-01" (it gets read as "negative o one"). If you must give
+  a code, spell it: letters one at a time, "zero" for 0, "dash" for a hyphen.
 - HONESTY: you cannot draw on or annotate the video, and there is no metrology/inspection
   feed. Don't claim an action you didn't take.
-
-VISION: if the technician is asking about what is VISIBLE in the camera feed ("what do you
-see", "look at this", "what's on the screen", "read that gauge", "can you see the video")
-and the live feed is ON, you cannot see it — reply with EXACTLY the single token
-DEFER_VISION and call no tools; the vision model will answer. If the feed is OFF, do NOT
-defer — reply briefly that they should turn the vision feed on first.
-
-For greetings or small talk, just reply briefly and warmly in one sentence (no tools).
 """
 
 
@@ -84,7 +84,7 @@ class NullSidecar:
     enabled = False
 
     async def run(self, user_text: str, history: list[dict], vision_on: bool, execute_fn: ExecuteFn) -> Reply:
-        return Reply("defer_vision")  # no brain -> let the realtime model answer
+        return Reply("defer")  # no brain -> let the realtime model answer
 
     async def aclose(self) -> None:
         return None
@@ -101,21 +101,17 @@ class ToolCallingSidecar:
         self._client = httpx.AsyncClient(timeout=25.0)
 
     async def run(self, user_text: str, history: list[dict], vision_on: bool, execute_fn: ExecuteFn) -> Reply:
-        vis = "The live camera feed is currently ON." if vision_on else "The live camera feed is currently OFF."
-        messages: list[dict] = [{"role": "system", "content": SYSTEM_PROMPT + "\n\n" + vis}]
+        messages: list[dict] = [{"role": "system", "content": SYSTEM_PROMPT}]
         messages.extend({"role": h["role"], "content": h["content"]} for h in history)
         if not history or history[-1].get("content") != user_text:
             messages.append({"role": "user", "content": user_text})
 
-        # Round 1 — decide tools (or a direct reply / vision defer).
+        # Round 1 — decide tools. No tools => defer (the realtime model handles vision /
+        # chit-chat directly; only tool-grounded DATA answers are voiced by the brain).
         msg = await self._chat(messages, with_tools=True)
         tool_calls = msg.get("tool_calls") or []
-        content = (msg.get("content") or "").strip()
-
         if not tool_calls:
-            if "DEFER_VISION" in content.upper():
-                return Reply("defer_vision")
-            return Reply("speak", content)
+            return Reply("defer")
 
         # Execute each tool through the gateway (panels/routing/grounded results).
         messages.append({"role": "assistant", "content": msg.get("content"), "tool_calls": tool_calls})

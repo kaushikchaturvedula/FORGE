@@ -12,7 +12,6 @@ import json
 import pytest
 
 from app.agents.sidecar import Reply
-from app.realtime.events import ResponseCreated, ResponseDone
 from app.ws.gateway import RealtimeBridge, TOOL_AGENT, build_resume_summary, _DedupCache
 from app.agents.session_state import SessionState
 
@@ -71,7 +70,7 @@ class _NullBrain:
     enabled = False
 
     async def run(self, text, history, vision_on, execute_fn):
-        return Reply("defer_vision")
+        return Reply("defer")
 
 
 class _FakeBrain:
@@ -111,7 +110,7 @@ def bridge():
     b._seen_event_types = set()
     b._history = []
     b._bg_tasks = set()
-    b._expect_response = False
+    b._turn_seq = 1
     b._response_idle = asyncio.Event()
     b._response_idle.set()
     b.sidecar = _NullBrain()
@@ -132,34 +131,33 @@ async def test_apply_tool_dedups(bridge):
     assert a is not None and b is None  # second is a duplicate within the window
 
 
-# ── the brain composes, the realtime model voices ───────────────────────────
+# ── the brain composes data answers; the realtime model voices them ─────────
 async def test_brain_runs_tools_and_voices_grounded_answer(bridge):
     bridge.sidecar = _FakeBrain(
         [("lookup_torque", {"fastener_id": "tool_holder_bolt"})],
         Reply("speak", "Twelve newton-metres, star pattern, two passes."),
     )
-    await bridge._handle_turn("what's the torque on the tool-holder bolts")
+    await bridge._handle_turn("what's the torque on the tool-holder bolts", bridge._turn_seq)
     types = [m["type"] for m in bridge.ws.json_sent]
     assert "panel" in types and "tool" in types  # tool ran, panel updated
     assert "agent" in types  # routing chip lit up
-    # the grounded answer was injected as a SPEAK message and a response was created
     role, text = bridge.session.injected[-1]
-    assert text.startswith("SPEAK: Twelve newton-metres")
+    assert text.startswith("SPEAK: Twelve newton-metres")  # grounded answer voiced verbatim
     assert bridge.session.responses == 1
-    assert bridge._expect_response is True  # flagged as ours so it won't be suppressed
 
 
-async def test_brain_defers_vision_to_realtime(bridge):
-    bridge.orch.state.vision_active = True
-    bridge.sidecar = _FakeBrain([], Reply("defer_vision"))
-    await bridge._handle_turn("what do you see on the machine")
-    assert bridge.session.responses == 1     # realtime model is asked to answer
-    assert not bridge.session.injected       # but no SPEAK text injected
+async def test_brain_defers_non_data_to_realtime(bridge):
+    # Vision / chit-chat: the brain calls no tools and defers — the realtime model already
+    # answered itself, so we do NOT create another response or inject anything.
+    bridge.sidecar = _FakeBrain([], Reply("defer"))
+    await bridge._handle_turn("what do you see on the machine", bridge._turn_seq)
+    assert bridge.session.responses == 0
+    assert not bridge.session.injected
 
 
 async def test_routing_chip_emitted_per_tool(bridge):
     bridge.sidecar = _FakeBrain([("run_safety_check", {"check_type": "loto"})], Reply("speak", "Starting LOTO."))
-    await bridge._handle_turn("run the lockout procedure")
+    await bridge._handle_turn("run the lockout procedure", bridge._turn_seq)
     assert any(m["type"] == "agent" and m["agent"] == "safety" for m in bridge.ws.json_sent)
 
 
@@ -168,24 +166,29 @@ async def test_threshold_alert_emitted_to_browser(bridge):
         [("record_measurement", {"type": "spindle_torque", "value": 65, "unit": "Nm"})],
         Reply("speak", "Recorded sixty-five newton-metres — overstrain alert."),
     )
-    await bridge._handle_turn("record spindle torque sixty five")
+    await bridge._handle_turn("record spindle torque sixty five", bridge._turn_seq)
     assert any(m["type"] == "alert" and m["level"] == "alert" for m in bridge.ws.json_sent)
 
 
-# ── auto-response suppression ────────────────────────────────────────────────
-async def test_autonomous_response_is_suppressed(bridge):
-    bridge._expect_response = False
-    await bridge._handle_server_event(ResponseCreated(response_id="r1"))
-    assert bridge.session.cancelled == 1  # the realtime model's auto-answer is cancelled
+# ── response sequencing + stale-turn drop ────────────────────────────────────
+async def test_grounded_speak_waits_for_idle(bridge):
+    import asyncio
+
+    bridge._response_idle.clear()  # the realtime ack is still in flight
+    bridge.sidecar = _FakeBrain([("lookup_part", {"query": "drawbar"})], Reply("speak", "Part P L four five drawbar."))
+    task = asyncio.create_task(bridge._handle_turn("part number for the drawbar", bridge._turn_seq))
+    await asyncio.sleep(0.02)
+    assert bridge.session.responses == 0  # parked until the ack finishes
+    bridge._response_idle.set()
+    await task
+    assert bridge.session.responses == 1  # now voiced
 
 
-async def test_our_response_is_not_suppressed(bridge):
-    bridge._expect_response = True
-    await bridge._handle_server_event(ResponseCreated(response_id="r2"))
-    assert bridge.session.cancelled == 0
-    assert bridge._expect_response is False  # consumed
-    await bridge._handle_server_event(ResponseDone(response_id="r2"))
-    assert bridge._response_idle.is_set()
+async def test_stale_turn_is_dropped(bridge):
+    bridge._turn_seq = 3
+    bridge.sidecar = _FakeBrain([], Reply("speak", "old answer"))
+    await bridge._handle_turn("old", 1)  # seq 1 != current 3
+    assert bridge.session.responses == 0 and not bridge.session.injected
 
 
 def test_tool_agent_map_is_valid():
