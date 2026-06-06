@@ -4,6 +4,15 @@ import type { FrameProvider } from "../../hooks/useRealtimeSocket";
 
 type Mode = "camera" | "file";
 
+export interface FieldAnnotation { label: string; region: string; seq: number }
+
+// Approximate region → absolute placement of the callout badge over the video.
+const REGION_POS: Record<string, string> = {
+  "top-left": "left-3 top-8", top: "left-1/2 top-8 -translate-x-1/2", "top-right": "right-3 top-8",
+  left: "left-3 top-1/2 -translate-y-1/2", center: "left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2", right: "right-3 top-1/2 -translate-y-1/2",
+  "bottom-left": "bottom-12 left-3", bottom: "bottom-12 left-1/2 -translate-x-1/2", "bottom-right": "bottom-12 right-3",
+};
+
 // The live "field camera". Three ways to feed it:
 //  * a webcam / OBS Virtual Camera (pick the device),
 //  * a local video FILE (load a CNC clip directly — no OBS needed),
@@ -16,6 +25,7 @@ export function FieldVisionPanel({
   height,
   screen,
   perception,
+  annotate,
   registerFrameProvider,
   registerScreenProvider,
 }: {
@@ -24,10 +34,21 @@ export function FieldVisionPanel({
   height: number;
   screen: { width: number; height: number };
   perception: string;
+  annotate?: FieldAnnotation | null;
   registerFrameProvider: (fn: FrameProvider | null) => void;
   registerScreenProvider: (fn: FrameProvider | null) => void;
 }) {
   const [mode, setMode] = useState<Mode>("camera");
+  const [callout, setCallout] = useState<FieldAnnotation | null>(null);
+
+  // Show a callout when one arrives; auto-clear after a few seconds.
+  useEffect(() => {
+    if (!annotate) return;
+    setCallout(annotate);
+    const id = window.setTimeout(() => setCallout(null), 6000);
+    return () => window.clearTimeout(id);
+  }, [annotate?.seq]);
+
   const [devices, setDevices] = useState<MediaDeviceInfo[]>([]);
   const [deviceId, setDeviceId] = useState<string | undefined>(undefined);
   const [fileUrl, setFileUrl] = useState<string | null>(null);
@@ -141,6 +162,13 @@ export function FieldVisionPanel({
         {active && (
           <div className="absolute left-2 top-2 flex items-center gap-1 rounded bg-black/60 px-2 py-0.5 text-[10px] text-forge-vision">
             <span className="h-2 w-2 animate-pulseRing rounded-full bg-forge-vision" /> LIVE · 1 fps → Field Advisor
+          </div>
+        )}
+        {active && callout && (
+          <div className={`pointer-events-none absolute ${REGION_POS[callout.region] ?? REGION_POS.center} z-10`}>
+            <div className="animate-pulseRing rounded-md border-2 border-forge-vision bg-black/70 px-2 py-1 text-xs font-semibold text-forge-vision shadow-lg">
+              ◎ {callout.label}
+            </div>
           </div>
         )}
         {active && perception && (

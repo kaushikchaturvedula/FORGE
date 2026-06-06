@@ -30,6 +30,9 @@ interface State {
   visionActive: boolean;
   recentTools: ToolTick[];
   error: string | null;
+  modelCmd: { action: "rotate" | "reset" | "none"; degrees?: number; axis?: "x" | "y" | "z"; seq: number };
+  highlight: { component: string; svg_id: string; label: string; seq: number } | null;
+  annotate: { label: string; region: string; seq: number } | null;
 }
 
 const initial: State = {
@@ -48,6 +51,9 @@ const initial: State = {
   visionActive: false,
   recentTools: [],
   error: null,
+  modelCmd: { action: "none", seq: 0 },
+  highlight: null,
+  annotate: null,
 };
 
 type Action =
@@ -129,6 +135,25 @@ function applyControl(s: State, action: string, payload: Record<string, unknown>
       if (p === "all") return { ...s, visible: {} };
       return { ...s, visible: { ...s.visible, [p]: false } };
     }
+    case "rotate_model":
+      return {
+        ...s,
+        visible: { ...s.visible, model: true },
+        modelCmd: { action: "rotate", degrees: Number(payload.degrees) || 30, axis: (payload.axis as "x" | "y" | "z") || "y", seq: s.modelCmd.seq + 1 },
+      };
+    case "reset_view":
+      return { ...s, visible: { ...s.visible, model: true }, modelCmd: { action: "reset", seq: s.modelCmd.seq + 1 } };
+    case "highlight":
+      return {
+        ...s,
+        // reveal=false (passing mention) pulses only if the map is already open.
+        visible: payload.reveal === false ? s.visible : { ...s.visible, overview: true },
+        highlight: { component: String(payload.component || ""), svg_id: String(payload.svg_id || ""), label: String(payload.label || ""), seq: (s.highlight?.seq ?? 0) + 1 },
+      };
+    case "clear_highlight":
+      return { ...s, highlight: null };
+    case "annotate_field":
+      return { ...s, annotate: { label: String(payload.label || ""), region: String(payload.region || "center"), seq: (s.annotate?.seq ?? 0) + 1 } };
     default:
       return s;
   }

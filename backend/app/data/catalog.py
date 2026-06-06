@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import csv
 import json
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Iterable
@@ -44,6 +45,7 @@ class Catalog:
     procedures: dict[str, Any]
     safety: dict[str, Any]
     diagrams: dict[str, Any]
+    hotspots: dict[str, Any] = field(default_factory=dict)
     # Reverse alias indexes (normalized phrase -> canonical key), built at load.
     _part_index: dict[str, str] = field(default_factory=dict)
     _fastener_index: dict[str, str] = field(default_factory=dict)
@@ -61,6 +63,7 @@ class Catalog:
         procedures = _load_json(DATA_DIR / "procedures.json").get("procedures", {})
         safety = _load_json(DATA_DIR / "safety.json").get("checks", {})
         diagrams = _load_json(SCHEMATICS_DIR / "schematics.json").get("diagrams", {})
+        hotspots = _load_json(DATA_DIR / "hotspots.json").get("hotspots", {})
 
         cat = cls(
             machines=machines,
@@ -69,6 +72,7 @@ class Catalog:
             procedures=procedures,
             safety=safety,
             diagrams=diagrams,
+            hotspots=hotspots,
         )
         cat._build_index(parts, cat._part_index)
         cat._build_index(fasteners, cat._fastener_index)
@@ -158,6 +162,27 @@ class Catalog:
                     if pn and (pn == norm or pn in norm) and len(pn) > best_len:
                         best, best_len = (comp.get("id", ""), comp), len(pn)
         return best
+
+    def resolve_hotspot(self, text: str) -> tuple[str, dict[str, Any]] | None:
+        """Find which highlightable component a phrase (or a whole spoken sentence) names.
+        Matches on WORD BOUNDARIES (not raw substring) so "embedded"/"woodchuck"/"inspected"
+        don't trip the bed/chuck hotspots; returns the component with the longest matching
+        phrase, so "...through-spindle coolant union..." resolves to coolant_union."""
+        norm = _normalize(text)
+        if not norm:
+            return None
+        best: tuple[str, dict[str, Any]] | None = None
+        best_len = 0
+        for key, h in self.hotspots.items():
+            phrases = [key, h.get("label", "")] + (h.get("aliases") or [])
+            for p in phrases:
+                pn = _normalize(p)
+                if pn and len(pn) > best_len and re.search(rf"\b{re.escape(pn)}\b", norm):
+                    best, best_len = (key, h), len(pn)
+        return best
+
+    def hotspot_names(self) -> list[str]:
+        return list(self.hotspots)
 
     @staticmethod
     def _resolve(

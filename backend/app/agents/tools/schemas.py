@@ -210,6 +210,42 @@ TOOLS: dict[str, dict[str, Any]] = {
         {},
         [],
     ),
+    "rotate_model": _fn(
+        "rotate_model",
+        "Rotate the 3D machine model by a number of degrees on an axis (whole-model orientation).",
+        {
+            "degrees": {"type": "number", "description": "Degrees to rotate (e.g. 30, 90)."},
+            "axis": {"type": "string", "enum": sorted(wl.ROTATE_AXES), "description": "Axis to rotate on (default y)."},
+        },
+        ["degrees"],
+    ),
+    "reset_view": _fn(
+        "reset_view",
+        "Reset the 3D model to its default camera and orientation.",
+        {},
+        [],
+    ),
+    "highlight_component": _fn(
+        "highlight_component",
+        "Point at / outline a named machine component on the overview schematic (drawbar, spindle, coolant union, turret, chuck, control box, etc.).",
+        {"name": {"type": "string", "description": "The component to highlight."}},
+        ["name"],
+    ),
+    "clear_highlight": _fn(
+        "clear_highlight",
+        "Remove any component highlight from the overview schematic.",
+        {},
+        [],
+    ),
+    "annotate_field": _fn(
+        "annotate_field",
+        "Draw a labeled callout on the live field-vision video at an approximate region (top-left, right, center, ...).",
+        {
+            "label": {"type": "string", "description": "Short callout text."},
+            "region": {"type": "string", "description": "Approximate region of the frame, e.g. top-right."},
+        },
+        ["label"],
+    ),
 }
 
 

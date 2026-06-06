@@ -81,6 +81,11 @@ TOOL_AGENT = {
     "capture_photo": "documentation",
     "generate_report": "handoff",
     "prepare_handoff": "handoff",
+    "rotate_model": "schematic",
+    "reset_view": "schematic",
+    "highlight_component": "schematic",
+    "clear_highlight": "schematic",
+    "annotate_field": "field_advisor",
 }
 
 
@@ -128,6 +133,8 @@ class RealtimeBridge:
         self._want_session = asyncio.Event()
         self._connect_lock = asyncio.Lock()
         self._seen_event_types: set[str] = set()
+        self._intent_ctx: dict = {}  # per-connection context for intent (e.g. last rotate)
+        self._last_highlight: str | None = None  # de-dupe auto-highlights
 
     # ── lifecycle ────────────────────────────────────────────────────────────
     async def run(self) -> None:
@@ -305,6 +312,7 @@ class RealtimeBridge:
             await self._safe_send_json(protocol.transcript("assistant", delta=evt.text))
         elif isinstance(evt, events.OutputTranscriptDone):
             await self._safe_send_json(protocol.transcript("assistant", text=evt.text, final=True))
+            await self._on_assistant_transcript(evt.text)
         elif isinstance(evt, events.InputTranscriptDelta):
             pass  # user partials are dropped (avoids flickering mis-transcriptions)
         elif isinstance(evt, events.InputTranscriptDone):
@@ -343,8 +351,25 @@ class RealtimeBridge:
         await self._safe_send_json(protocol.transcript("user", text=text, final=True))
         if not text.strip():
             return
-        for name, args in intent.infer_tools(text):
+        self._last_highlight = None  # re-arm auto-highlight for this new turn
+        for name, args in intent.infer_tools(text, self._intent_ctx):
             await self._apply_tool(name, args)
+            if name == "highlight_component":  # shared guard: don't re-pulse when FORGE echoes it
+                self._last_highlight = args.get("name")
+
+    async def _on_assistant_transcript(self, text: str) -> None:
+        """When FORGE *names* a component in its spoken answer, auto-point at it on the
+        overview schematic — so the console highlights whatever it's talking about."""
+        if not text or not text.strip():
+            return
+        call = intent.auto_highlight(text)
+        if call is None:
+            return
+        name, args = call
+        if args.get("name") == self._last_highlight:
+            return  # already pointing there
+        self._last_highlight = args.get("name")
+        await self._apply_tool(name, args)
 
     # ── tool execution (panel + routing-chip updates) ────────────────────────
     async def _apply_tool(self, name: str, args: dict):

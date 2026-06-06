@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, lazy, useEffect, useMemo, useState } from "react";
 import { Alerts } from "./components/Alerts";
 import { HudRail } from "./components/HudRail";
 import { Panel } from "./components/Panel";
@@ -7,14 +7,19 @@ import { EventLogPanel } from "./components/panels/EventLogPanel";
 import { FieldVisionPanel } from "./components/panels/FieldVisionPanel";
 import { MachineDataPanel } from "./components/panels/MachineDataPanel";
 import { MeasurementPanel } from "./components/panels/MeasurementPanel";
+import { OverviewPanel } from "./components/panels/OverviewPanel";
+// Three.js is heavy — load the 3D panel only when it's first shown.
+const ModelPanel = lazy(() => import("./components/panels/ModelPanel").then((m) => ({ default: m.ModelPanel })));
 import { ProcedurePanel } from "./components/panels/ProcedurePanel";
 import { SchematicPanel } from "./components/panels/SchematicPanel";
 import { useRealtimeSocket } from "./hooks/useRealtimeSocket";
 import { PANEL_TITLES, fetchConfig, type RuntimeConfig } from "./lib/api";
 
-const PANEL_ORDER = ["machine_data", "schematic", "procedure", "vision", "measurement", "event_log"];
+const PANEL_ORDER = ["machine_data", "overview", "model", "schematic", "procedure", "vision", "measurement", "event_log"];
 const ACCENTS: Record<string, string> = {
   machine_data: "#7c3aed",
+  overview: "#06b6d4",
+  model: "#a78bfa",
   schematic: "#06b6d4",
   procedure: "#f59e0b",
   vision: "#06b6d4",
@@ -89,7 +94,14 @@ export default function App() {
           {visiblePanels.length === 0 ? (
             <WelcomeMat />
           ) : (
-            <div className="grid h-full gap-3" style={{ gridTemplateColumns: `repeat(${visiblePanels.length === 1 ? 1 : 2}, minmax(0, 1fr))` }}>
+            <div
+              className="grid gap-3"
+              style={{
+                gridTemplateColumns: `repeat(${visiblePanels.length === 1 ? 1 : 2}, minmax(0, 1fr))`,
+                gridAutoRows: visiblePanels.length <= 2 ? "minmax(0, 1fr)" : "minmax(320px, 1fr)",
+                height: visiblePanels.length <= 2 ? "100%" : "auto",
+              }}
+            >
               {visiblePanels.map((p) => (
                 <Panel key={p} title={PANEL_TITLES[p]} accent={ACCENTS[p]}>
                   {renderPanel(p)}
@@ -107,6 +119,14 @@ export default function App() {
     switch (p) {
       case "machine_data":
         return <MachineDataPanel data={data} />;
+      case "model":
+        return (
+          <Suspense fallback={<div className="flex h-full items-center justify-center text-sm text-forge-muted">Loading 3D model…</div>}>
+            <ModelPanel cmd={state.modelCmd} />
+          </Suspense>
+        );
+      case "overview":
+        return <OverviewPanel highlight={state.highlight} />;
       case "schematic":
         return <SchematicPanel data={data} />;
       case "procedure":
@@ -123,6 +143,7 @@ export default function App() {
             height={config?.vision.height ?? 240}
             screen={config?.vision.screen ?? { width: 768, height: 768 }}
             perception={lastAssistant}
+            annotate={state.annotate}
             registerFrameProvider={registerFrameProvider}
             registerScreenProvider={registerScreenProvider}
           />

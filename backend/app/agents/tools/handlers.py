@@ -375,6 +375,75 @@ def hide_panel(state: SessionState, args: dict) -> ToolResult:
     return ToolResult(output={"hidden": panel}, control={"action": "hide_panel", "panel": panel})
 
 
+# ── 3D model viewer ──────────────────────────────────────────────────────────
+def rotate_model(state: SessionState, args: dict) -> ToolResult:
+    """Rotate the 3D model (whole-model orientation; the GLB is a fused mesh)."""
+    try:
+        degrees = int(float(args.get("degrees", 30)))
+    except (TypeError, ValueError):
+        degrees = 30
+    axis = str(args.get("axis", "y")).lower()
+    if axis not in ("x", "y", "z"):
+        axis = "y"
+    state.visible_panels.add("model")
+    return ToolResult(
+        output={"rotated": degrees, "axis": axis},
+        control={"action": "rotate_model", "degrees": degrees, "axis": axis},
+    )
+
+
+def reset_view(state: SessionState, args: dict) -> ToolResult:
+    """Restore the 3D model's default camera + orientation."""
+    return ToolResult(output={"view": "reset"}, control={"action": "reset_view"})
+
+
+# ── voice-driven highlighting (overview schematic) ───────────────────────────
+def highlight_component(state: SessionState, args: dict) -> ToolResult:
+    """Point at a component on the overview schematic. The name is whitelisted against the
+    hotspot registry upstream, so resolve always hits. `reveal` (default True) opens the
+    overview panel; the auto-highlight path passes reveal=False so a passing mention only
+    pulses the map when it's already open."""
+    resolved = catalog.resolve_hotspot(str(args.get("name", "")))
+    if resolved is None:  # defensive — grounding should have rejected
+        return ToolResult(output={"error": "unknown_component", "message": "I can't point to that part."})
+    key, hot = resolved
+    reveal = bool(args.get("reveal", True))
+    if reveal:
+        state.visible_panels.add("overview")
+    return ToolResult(
+        output={"highlighted": key, "label": hot.get("label")},
+        control={"action": "highlight", "component": key, "svg_id": hot.get("svg"), "label": hot.get("label"), "reveal": reveal},
+        frontend_extra=[protocol_show_overview()] if reveal else [],
+    )
+
+
+def clear_highlight(state: SessionState, args: dict) -> ToolResult:
+    return ToolResult(output={"highlight": "cleared"}, control={"action": "clear_highlight"})
+
+
+# ── field-vision callout (approximate) ───────────────────────────────────────
+def annotate_field(state: SessionState, args: dict) -> ToolResult:
+    """Draw a labeled callout on the FIELD VISION video at an approximate region."""
+    label = str(args.get("label", "")).strip() or "here"
+    region = str(args.get("region", "center")).lower().replace(" ", "-")
+    if region not in _FIELD_REGIONS:
+        region = "center"
+    return ToolResult(
+        output={"annotated": label, "region": region},
+        control={"action": "annotate_field", "label": label, "region": region},
+    )
+
+
+_FIELD_REGIONS = {"top-left", "top", "top-right", "left", "center", "right", "bottom-left", "bottom", "bottom-right"}
+
+
+def protocol_show_overview() -> dict[str, Any]:
+    """Reveal + (re)load the overview schematic panel (static asset served from public/)."""
+    from app.ws import protocol
+
+    return protocol.panel("overview", {"src": "/schematics/cnc_turnmill_overview.svg"})
+
+
 def activate_vision(state: SessionState, args: dict) -> ToolResult:
     state.vision_active = True
     state.visible_panels.add("vision")
@@ -403,6 +472,11 @@ HANDLERS: dict[str, Callable[[SessionState, dict], ToolResult]] = {
     "prepare_handoff": prepare_handoff,
     "show_panel": show_panel,
     "hide_panel": hide_panel,
+    "rotate_model": rotate_model,
+    "reset_view": reset_view,
+    "highlight_component": highlight_component,
+    "clear_highlight": clear_highlight,
+    "annotate_field": annotate_field,
     "activate_vision": activate_vision,
     "deactivate_vision": deactivate_vision,
 }

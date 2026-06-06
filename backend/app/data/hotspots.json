@@ -1,0 +1,65 @@
+{
+  "_note": "Maps spoken component names -> the overview-schematic element id (cmp-<name>) for highlight_component. Built from the REAL ids in frontend/public/schematics/cnc_turnmill_overview.svg. The GLB is a fused mesh, so highlighting is on the SVG only (mesh: null). Aliases are distinctive multi-word phrases so auto-highlight from FORGE's spoken transcript doesn't over-fire on common words.",
+  "hotspots": {
+    "spindle": {
+      "svg": "cmp-spindle",
+      "mesh": null,
+      "label": "Spindle",
+      "aliases": ["spindle", "main spindle", "spindle nose"]
+    },
+    "drawbar": {
+      "svg": "cmp-drawbar",
+      "mesh": null,
+      "label": "Drawbar",
+      "aliases": ["drawbar", "draw bar", "draw-bar", "pull bar", "pull stud"]
+    },
+    "chuck": {
+      "svg": "cmp-chuck",
+      "mesh": null,
+      "label": "Chuck",
+      "aliases": ["chuck", "work-holding chuck", "chuck jaws"]
+    },
+    "turret": {
+      "svg": "cmp-turret",
+      "mesh": null,
+      "label": "Turret",
+      "aliases": ["turret", "tool changer", "tool turret", "tool magazine"]
+    },
+    "headstock": {
+      "svg": "cmp-headstock",
+      "mesh": null,
+      "label": "Headstock",
+      "aliases": ["headstock", "head stock", "spindle head"]
+    },
+    "tailstock": {
+      "svg": "cmp-tailstock",
+      "mesh": null,
+      "label": "Tailstock",
+      "aliases": ["tailstock", "tail stock"]
+    },
+    "bed": {
+      "svg": "cmp-bed",
+      "mesh": null,
+      "label": "Bed / base",
+      "aliases": ["machine bed", "slant bed", "bed casting", "base casting"]
+    },
+    "coolant_union": {
+      "svg": "cmp-coolant_union",
+      "mesh": null,
+      "label": "Through-spindle coolant union",
+      "aliases": ["coolant union", "rotary union", "through-spindle coolant", "through spindle coolant", "coolant rotary union"]
+    },
+    "guard_door": {
+      "svg": "cmp-guard_door",
+      "mesh": null,
+      "label": "Guard door",
+      "aliases": ["guard door", "splash guard", "enclosure door", "safety guard"]
+    },
+    "control_box": {
+      "svg": "cmp-control_box",
+      "mesh": null,
+      "label": "Control box",
+      "aliases": ["control box", "control panel", "operator panel", "control pendant", "pendant"]
+    }
+  }
+}

@@ -75,6 +75,8 @@ def bridge():
     b._want_session = asyncio.Event()
     b._connect_lock = asyncio.Lock()
     b._seen_event_types = set()
+    b._intent_ctx = {}
+    b._last_highlight = None
     return b
 
 
@@ -129,6 +131,44 @@ async def test_non_latin_transcript_is_dropped(bridge):
 async def test_english_transcript_is_shown(bridge):
     await bridge._on_user_transcript("brief me on this machine")
     assert any(m["type"] == "transcript" and m["role"] == "user" for m in bridge.ws.json_sent)
+
+
+async def test_highlight_tool_emits_control_and_reveals_overview(bridge):
+    await bridge._apply_tool("highlight_component", {"name": "drawbar"})
+    msgs = bridge.ws.json_sent
+    assert any(m["type"] == "control" and m["action"] == "highlight" and m["svg_id"] == "cmp-drawbar" for m in msgs)
+    assert any(m["type"] == "panel" and m["panel"] == "overview" for m in msgs)  # overview revealed
+
+
+async def test_rotate_model_emits_control(bridge):
+    await bridge._apply_tool("rotate_model", {"degrees": 90, "axis": "x"})
+    assert any(m["type"] == "control" and m["action"] == "rotate_model" and m["degrees"] == 90 and m["axis"] == "x"
+               for m in bridge.ws.json_sent)
+
+
+async def test_unknown_highlight_is_grounded_out(bridge):
+    # not a hotspot -> grounding rejects -> no highlight control emitted
+    await bridge._apply_tool("highlight_component", {"name": "flux capacitor"})
+    assert not any(m.get("action") == "highlight" for m in bridge.ws.json_sent if m["type"] == "control")
+
+
+async def test_auto_highlight_on_assistant_transcript(bridge):
+    await bridge._on_assistant_transcript("Let me check the through-spindle coolant union for you.")
+    assert any(m["type"] == "control" and m.get("action") == "highlight" and m["component"] == "coolant_union"
+               for m in bridge.ws.json_sent)
+
+
+async def test_auto_highlight_does_not_pop_the_overview_panel(bridge):
+    # A passing mention pulses (reveal=False) but must NOT force-reveal the overview panel.
+    await bridge._on_assistant_transcript("The chuck pressure looks normal.")
+    ctrl = [m for m in bridge.ws.json_sent if m["type"] == "control" and m.get("action") == "highlight"]
+    assert ctrl and ctrl[0]["reveal"] is False
+    assert not any(m["type"] == "panel" and m["panel"] == "overview" for m in bridge.ws.json_sent)
+
+
+async def test_auto_highlight_skips_word_substring(bridge):
+    await bridge._on_assistant_transcript("You should embed the sensor before tightening.")
+    assert not any(m["type"] == "control" and m.get("action") == "highlight" for m in bridge.ws.json_sent)
 
 
 def test_tool_agent_map_is_valid():

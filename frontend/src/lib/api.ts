@@ -54,6 +54,8 @@ export type PanelName = (typeof PANELS)[number];
 export const PANEL_TITLES: Record<string, string> = {
   schematic: "Schematic",
   machine_data: "Machine Data",
+  model: "3D Model",
+  overview: "Machine Map",
   procedure: "Procedure / Checklist",
   vision: "Field Vision",
   measurement: "Measurements",

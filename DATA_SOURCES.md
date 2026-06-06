@@ -51,7 +51,21 @@ UCI Machine Learning Repository. https://doi.org/10.24432/C5HS5C — licensed CC
 | Source | License | Use in FORGE |
 |---|---|---|
 | **FORGE-generated SVG schematics** (`backend/app/data/schematics/*.svg`) | Apache 2.0 (this repo) | Hand-built labeled diagrams of the spindle, turret, and axes. Component `id`s exactly match `navigate_schematic` targets — more reliable for the demo than scraped diagrams. |
+| **FORGE-generated overview "Machine Map"** (`frontend/public/schematics/cnc_turnmill_overview.svg`) | Apache 2.0 (this repo) | Whole-machine schematic; each part is a `<g id="cmp-…">`. It is the **voice-driven highlight surface**: when FORGE names a component, the gateway resolves it via `backend/app/data/hotspots.json` and `highlight_component` pulses the matching group. (The 3D GLB is a fused mesh, so per-part highlighting lives on this SVG.) |
 | Optional supplement: [Wikimedia CNC category](https://commons.wikimedia.org/wiki/CNC) | varies (check per-file) | Not currently bundled; if added, attribution goes here. |
+
+---
+
+## 3D model (the "3D MODEL" panel)
+
+| Source | Link | License | Use in FORGE |
+|---|---|---|---|
+| **"CNC Milling Machine" 3D model** (`frontend/public/models/cnc_milling_machine.glb`, source OBJ in `datasets/cnc-milling-machine/`) | Sketchfab (model node id `Sketchfab_model`) — **⚠ confirm the exact author + license URL before publishing** | likely CC BY (Sketchfab default) — verify | Rendered with Three.js + GLTFLoader for whole-machine orientation (drag to orbit; voice `rotate_model` / `reset_view`). The GLB is a single fused mesh (no named sub-parts), so it is used for orientation only — not per-part highlighting. |
+
+> **TODO before submission:** replace the placeholder above with the exact Sketchfab model
+> page URL, author name, and confirmed license (and add the attribution line the license
+> requires). The GLB ships in `frontend/public/models/`; the original OBJ + textures are in
+> `datasets/cnc-milling-machine/` for provenance.
 
 ---
 

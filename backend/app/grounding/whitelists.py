@@ -32,8 +32,11 @@ PANELS = {
     "vision",
     "measurement",
     "event_log",
+    "model",
+    "overview",
     "all",
 }
+ROTATE_AXES = {"x", "y", "z"}
 
 
 @dataclass(frozen=True)
@@ -140,8 +143,25 @@ def validate(tool_name: str, args: dict) -> ValidationResult:
             return _reject(f"I don't have a {panel!r} panel.")
         return _OK
 
+    if tool_name == "rotate_model":
+        axis = str(args.get("axis", "y")).lower()
+        if axis not in ROTATE_AXES:
+            return _reject("I can rotate on the x, y, or z axis.")
+        if not _is_number(args.get("degrees", 30)):
+            return _reject("I need a number of degrees to rotate.")
+        return _OK
+
+    if tool_name == "highlight_component":
+        if catalog.resolve_hotspot(args.get("name", "")) is None:
+            return _reject(
+                f"I can't point to {args.get('name')!r}. I can highlight: "
+                f"{', '.join(catalog.hotspot_names())}."
+            )
+        return _OK
+
     # Tools with free-form or no constrained args: log_event, capture_photo,
-    # generate_report, prepare_handoff, activate_vision, deactivate_vision, transfers.
+    # generate_report, prepare_handoff, reset_view, clear_highlight, annotate_field,
+    # activate_vision, deactivate_vision, transfers.
     return _OK
 
 
