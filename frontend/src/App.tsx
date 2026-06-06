@@ -56,7 +56,7 @@ export default function App() {
         conv={state.conv}
         micActive={micActive}
         sessionRemaining={state.sessionRemaining}
-        assetId={config?.asset_id || "PL45LM-01"}
+        assetId={state.assetLabel || config?.asset_id || "PL45LM-01"}
         onToggleMic={() => void toggleMic()}
         onBargeIn={bargeIn}
         visionOn={manualVision}

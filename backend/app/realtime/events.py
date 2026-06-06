@@ -45,6 +45,11 @@ class SpeechStopped:
 
 
 @dataclass
+class InputAudioCommitted:
+    """The server committed/emptied the input audio buffer after a turn."""
+
+
+@dataclass
 class InputTranscriptDelta:
     """Partial transcription of the technician's speech."""
 
@@ -116,6 +121,7 @@ ServerEvent = (
     | SessionUpdated
     | SpeechStarted
     | SpeechStopped
+    | InputAudioCommitted
     | InputTranscriptDelta
     | InputTranscriptDone
     | AudioDelta
@@ -143,6 +149,8 @@ def parse_server_event(raw: dict[str, Any]) -> ServerEvent:
         return SpeechStarted()
     if etype == "input_audio_buffer.speech_stopped":
         return SpeechStopped()
+    if etype == "input_audio_buffer.committed":
+        return InputAudioCommitted()
 
     # User speech transcription (turn-detection / transcription events).
     if etype == "conversation.item.input_audio_transcription.delta":

@@ -37,6 +37,7 @@ class QwenRealtimeSession:
         self._ws: websockets.WebSocketClientProtocol | None = None
         self._audio_sent = False  # image frames require audio-first per the API
         self._last_audio_at = 0.0  # for re-priming silence across turn boundaries
+        self._buffer_has_audio = False  # uncommitted audio is in the input buffer right now
         self.session_id: str | None = None
 
     # ── lifecycle ────────────────────────────────────────────────────────────
@@ -48,6 +49,7 @@ class QwenRealtimeSession:
         headers = {"Authorization": f"Bearer {self.settings.dashscope_api_key}"}
         logger.info("connecting realtime session: %s", self.settings.realtime_ws_url)
         self._audio_sent = False  # reset the image-after-audio guard on (re)connect
+        self._buffer_has_audio = False
         # `additional_headers` (websockets >= 14); falls back to `extra_headers`.
         try:
             self._ws = await websockets.connect(
@@ -105,16 +107,22 @@ class QwenRealtimeSession:
             return
         await self._send(events.input_audio_append(pcm))
         self._audio_sent = True
+        self._buffer_has_audio = True
         self._last_audio_at = time.monotonic()
+
+    def mark_buffer_committed(self) -> None:
+        """The server committed/emptied the input buffer (after speech_stopped) — images
+        sent now would fail 'append image before append audio', so stop until new speech."""
+        self._buffer_has_audio = False
 
     async def append_image(self, jpeg: bytes) -> None:
         if not jpeg:
             return
-        # The API rejects an image unless real audio precedes it in the current buffer, and
-        # a silence-prime doesn't reliably register ("append image before append audio").
-        # So only stream a frame when the technician has actually spoken recently — which is
-        # exactly when vision matters. Otherwise skip the frame quietly.
-        if not self._audio_sent or (time.monotonic() - self._last_audio_at) > 10.0:
+        # The API rejects an image unless real audio is in the CURRENT (uncommitted) buffer.
+        # After each turn the buffer is committed/emptied, so only stream a frame while the
+        # technician is actively speaking — which is exactly when vision matters. This kills
+        # the per-second "append image before append audio" spam between turns.
+        if not self._buffer_has_audio:
             return
         await self._send(events.input_image_append(jpeg))
 

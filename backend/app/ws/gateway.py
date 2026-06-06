@@ -56,6 +56,7 @@ _BENIGN_ERROR_MARKERS = (
     "no response was generated",
     "idle_timeout",
     "session was closed",
+    "active response",  # "none active response" / "already has an active response" — recoverable
 )
 
 
@@ -95,6 +96,45 @@ TOOL_AGENT = {
     "clear_highlight": "schematic",
     "annotate_field": "field_advisor",
 }
+
+# Hero-asset tools — running one means we're back on the loaded CNC (restores the header).
+HERO_TOOLS = {"show_machine_data", "lookup_part", "lookup_torque", "show_schematic",
+              "navigate_schematic", "start_procedure", "run_safety_check"}
+
+
+_PANEL_PHRASE = {
+    "machine_data": "the machine-data panel",
+    "measurement": "the measurements panel",
+    "event_log": "the work-order log",
+    "vision": "the live camera feed",
+    "model": "the 3D model",
+}
+
+
+def build_ui_state(state: SessionState) -> str:
+    """A compact, truthful summary of what's currently on the dashboard — injected to the
+    model so it answers 'what's on screen?' from fact and never claims an absent panel."""
+    panels = state.visible_panels
+    if not panels:
+        return "nothing is displayed on the dashboard right now."
+    parts: list[str] = []
+    for p in sorted(panels):
+        if p == "schematic":
+            s = f"the {state.active_schematic or 'a'} schematic"
+            if state.schematic_focus:
+                s += f" (focused on {state.schematic_focus})"
+            parts.append(s)
+        elif p == "overview":
+            s = "the machine map"
+            if state.active_highlight:
+                s += f" (highlighting the {state.active_highlight})"
+            parts.append(s)
+        elif p == "procedure":
+            title = (state.active_procedure or state.active_safety or {}).get("title")
+            parts.append(f"a procedure/checklist{f' ({title})' if title else ''}")
+        elif p in _PANEL_PHRASE:
+            parts.append(_PANEL_PHRASE[p])
+    return "showing " + ", ".join(parts) + "." if parts else "nothing is displayed."
 
 
 def build_resume_summary(state: SessionState) -> str:
@@ -144,6 +184,10 @@ class RealtimeBridge:
         self._intent_ctx: dict = {}  # per-connection context for intent (e.g. last rotate)
         self._last_highlight: str | None = None  # de-dupe auto-highlights
         self._last_audio_at = 0.0  # monotonic time of the last real mic audio
+        self._native_tools_seen = False  # set once the model emits a native function call
+        self._outcome_cache: dict[str, object] = {}  # last ToolOutcome per dedup key
+        self._ui_state_hash = ""  # last injected SCREEN STATE (avoid re-injecting unchanged)
+        self._asset_label = self.orch.state.asset_id  # header indicator (dims on machine switch)
 
     # ── lifecycle ────────────────────────────────────────────────────────────
     async def run(self) -> None:
@@ -192,18 +236,22 @@ class RealtimeBridge:
                     protocol.error("Could not reach the realtime model — check DASHSCOPE_API_KEY / region.")
                 )
                 return False
-            # The realtime model is voice + eyes only — thin instructions, NO tools
-            # (the brain owns tools). It never auto-answers data.
+            # Native-first: advertise the action/display tools so the model can drive the
+            # console itself (closed loop). If the endpoint ignores tools, the intent layer
+            # is the deduped safety net. The session.updated echo (logged) reveals support.
+            from app.agents.tools import schemas
             from app.agents.voice import realtime_instructions
 
             instructions = realtime_instructions()
             if self._had_activity:
                 instructions = instructions + "\n\nCONTEXT CARRIED OVER:\n" + build_resume_summary(self.orch.state)
-            await self.session.update_session(instructions=instructions, tools=[])
+            await self.session.update_session(instructions=instructions, tools=list(schemas.TOOLS.values()))
             self._connected_at = time.monotonic()
             self._connect_failures = 0
             logger.info("realtime session ready (agent=%s)", self.orch.active_agent)
             await self._safe_send_json(protocol.state("listening", self._remaining()))
+            self._ui_state_hash = ""  # re-tell the model the screen state on (re)connect
+            await self._inject_ui_state()
             return True
 
     # ── upstream: browser -> Qwen ────────────────────────────────────────────
@@ -341,15 +389,28 @@ class RealtimeBridge:
             await self._safe_send_json(protocol.interrupted())  # barge-in: drain playback
             await self._safe_send_json(protocol.state("listening"))
         elif isinstance(evt, events.SpeechStopped):
+            self.session.mark_buffer_committed()  # buffer about to commit — stop sending frames
             await self._safe_send_json(protocol.state("thinking"))
+        elif isinstance(evt, events.InputAudioCommitted):
+            self.session.mark_buffer_committed()  # input buffer emptied — no images until new speech
         elif isinstance(evt, events.ResponseCreated):
             await self._safe_send_json(protocol.state("speaking"))
         elif isinstance(evt, events.ResponseDone):
             await self._safe_send_json(protocol.state("listening", self._remaining()))
         elif isinstance(evt, events.SessionUpdated):
-            logger.info("session.updated echo: keys=%s", sorted(evt.session)[:12])
+            has_tools = bool(evt.session.get("tools"))
+            logger.info("session.updated echo: tools_supported=%s keys=%s", has_tools, sorted(evt.session)[:12])
         elif isinstance(evt, events.FunctionCallDone):
-            logger.info("ignoring native function call: %s", evt.name)  # model has no tools
+            # NATIVE function call — the closed loop: execute, then return the real result so
+            # the model narrates what actually happened (not a blind claim).
+            self._native_tools_seen = True
+            logger.info("NATIVE function call: %s args=%s", evt.name, evt.arguments)
+            outcome = await self._apply_tool(evt.name, evt.arguments)
+            result = outcome.model_output if outcome is not None else {"ok": True, "note": "already applied"}
+            try:
+                await self.session.send_function_result(evt.call_id, result)
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("send_function_result: %r", exc)
         elif isinstance(evt, events.RealtimeError):
             if _is_benign_error(evt.message):
                 logger.info("realtime notice (benign): %s", evt.message)  # not shown to user
@@ -376,6 +437,8 @@ class RealtimeBridge:
             await self._apply_tool(name, args)
             if name == "highlight_component":  # shared guard: don't re-pulse when FORGE echoes it
                 self._last_highlight = args.get("name")
+        if intent.is_machine_switch(text):
+            await self._set_asset_label("general guidance")
 
     async def _on_assistant_transcript(self, text: str) -> None:
         """When FORGE *names* a component in its spoken answer, auto-point at it on the
@@ -394,11 +457,12 @@ class RealtimeBridge:
     # ── tool execution (panel + routing-chip updates) ────────────────────────
     async def _apply_tool(self, name: str, args: dict):
         """Run one tool through the orchestrator and emit its browser effects + routing chip.
-        Returns the outcome (or None on dedup). Never raises."""
+        On a dedup (native FC + intent both fired the same call) returns the CACHED outcome so
+        the closed loop still feeds the model the real result. Never raises."""
         key = f"{name}:{json.dumps(args, sort_keys=True)}"
         if self.dedup.is_duplicate(key, time.monotonic()):
             logger.info("deduped tool call %s", name)
-            return None
+            return self._outcome_cache.get(key)
         await self._safe_send_json(protocol.tool_event(name, status="called", args=args))
         # Light up the specialist chip that owns this tool.
         agent = TOOL_AGENT.get(name)
@@ -414,13 +478,35 @@ class RealtimeBridge:
             from app.agents.orchestrator import ToolOutcome
 
             outcome = ToolOutcome(model_output={"error": "tool_failed", "message": f"{name} failed: {exc}"})
+        self._outcome_cache[key] = outcome
         for msg in outcome.frontend:
             await self._safe_send_json(msg)
         latency_ms = (time.monotonic() - t0) * 1000
         await self._safe_send_json(
             protocol.metrics(self.orch.metrics.count, self.orch.metrics.last_tool, self.orch.metrics.rejected, latency_ms)
         )
+        if name in HERO_TOOLS:  # interacting with the hero CNC restores the header
+            await self._set_asset_label(self.orch.state.asset_id)
+        await self._inject_ui_state()  # keep the model aware of what's now on screen
         return outcome
+
+    async def _set_asset_label(self, label: str) -> None:
+        if label == self._asset_label:
+            return
+        self._asset_label = label
+        await self._safe_send_json(protocol.control("asset", label=label))
+
+    async def _inject_ui_state(self) -> None:
+        """Tell the model what is currently displayed, so it answers 'what's on screen?' from
+        truth and never claims a panel that isn't up. Injected only when it changes."""
+        summary = build_ui_state(self.orch.state)
+        if summary == self._ui_state_hash or not self.session.connected:
+            return
+        self._ui_state_hash = summary
+        try:
+            await self.session.inject_message(f"SCREEN STATE: {summary}", role="system")
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("inject ui state: %r", exc)
 
     # ── helpers ──────────────────────────────────────────────────────────────
     def _remaining(self) -> int:

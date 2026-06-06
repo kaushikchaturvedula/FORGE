@@ -35,7 +35,7 @@
     "axes": {
       "diagram_type": "axes",
       "title": "Axis Layout (X / Y / Z)",
-      "aliases": ["axes", "axis", "axis layout", "motion system"],
+      "aliases": ["axes", "axis", "axis layout", "axes layout", "access layout", "axis system", "motion system", "xyz", "x y z"],
       "file": "axes.svg",
       "viewbox": { "w": 800, "h": 600 },
       "components": [

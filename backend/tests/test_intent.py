@@ -118,6 +118,12 @@ def test_log_event_uses_event_type_key():
     assert any(n == "log_event" and a.get("event_type") == "note" and "type" not in a for n, a in logs)
 
 
+def test_access_layout_mis_transcription_resolves_to_axes():
+    # gummy hears "axis layout" as "access layout" — the safety-net resolver must survive it
+    assert catalog.resolve_diagram("the full access layout")[0] == "axes"
+    assert ("show_schematic", {"diagram_type": "axes"}) in infer_tools("show me the full access layout schematic", {})
+
+
 def test_resolve_hotspot_maps_real_svg_ids():
     for phrase, key in [("the drawbar", "drawbar"), ("tool changer", "turret"),
                         ("control panel", "control_box"), ("rotary union", "coolant_union")]:

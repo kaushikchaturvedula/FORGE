@@ -51,6 +51,12 @@ def test_parse_speech_started_for_bargein():
     )
 
 
+def test_parse_input_audio_committed():
+    assert isinstance(
+        ev.parse_server_event({"type": "input_audio_buffer.committed"}), ev.InputAudioCommitted
+    )
+
+
 def test_parse_error_and_unknown():
     err = ev.parse_server_event({"type": "error", "error": {"message": "boom", "code": "x"}})
     assert isinstance(err, ev.RealtimeError) and err.message == "boom"

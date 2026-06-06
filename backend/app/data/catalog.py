@@ -262,7 +262,7 @@ def catalog_brief(asset_id: str | None = None) -> str:
         f"Coolant: {co.get('tank_l')} L tank, {co.get('through_spindle_bar')} bar through-spindle."
     )
     if readings:
-        out.append("Current telemetry (nominal run): " + ", ".join(
+        out.append("Last-recorded readings (spec sheet / last service — NOT a live feed): " + ", ".join(
             f"{k.replace('_', ' ')} {v.get('value')} {v.get('unit')}" for k, v in readings.items()) + ".")
     thr = [f"{k.replace('_', ' ')} warn at {th[k].get('warn_above')}, alert at {th[k].get('alert_above')} {th[k].get('unit', '')}"
            for k in ("spindle_torque", "tool_wear", "process_temperature", "rotational_speed", "overstrain_index") if th.get(k)]

@@ -84,6 +84,8 @@ def show_schematic(state: SessionState, args: dict) -> ToolResult:
     asset_id = catalog.resolve_asset(args.get("asset_id")) or state.asset_id
     key, diagram = catalog.resolve_diagram(args.get("diagram_type", ""))  # validated upstream
     state.visible_panels.add("schematic")
+    state.active_schematic = key
+    state.schematic_focus = None
     return ToolResult(
         output={"diagram_type": key, "title": diagram.get("title")},
         panel={
@@ -105,6 +107,7 @@ def navigate_schematic(state: SessionState, args: dict) -> ToolResult:
     action = str(args.get("action", "")).lower()
     if action == "jump":
         key, comp = catalog.resolve_component(args.get("diagram_type", ""), args.get("target", ""))
+        state.schematic_focus = comp.get("label") or key
         return ToolResult(
             output={"action": action, "target": key, "label": comp.get("label")},
             panel={
@@ -219,7 +222,7 @@ def run_safety_check(state: SessionState, args: dict) -> ToolResult:
     # action == "confirm": advance past the current item.
     if action == "confirm":
         confirmed_item = items[idx]
-        state.add_log("safety_confirm", f"Confirmed: {confirmed_item['text']}", check_type=key, item=confirmed_item["n"])
+        entry = state.add_log("safety_confirm", f"Confirmed: {confirmed_item['text']}", check_type=key, item=confirmed_item["n"])
         active["index"] = idx + 1
         if active["index"] >= len(items):
             completion = active.get("completion") or "Checklist complete."
@@ -228,8 +231,11 @@ def run_safety_check(state: SessionState, args: dict) -> ToolResult:
             return ToolResult(
                 output={"check_type": key, "complete": True, "message": completion},
                 panel={"panel": "procedure", "data": {"mode": "safety", "title": check.get("title"), "complete": True, "message": completion}},
+                log=entry,
             )
-        return _safety_view(state, spoken_prefix="Confirmed. Next: ")
+        view = _safety_view(state, spoken_prefix="Confirmed. Next: ")
+        view.log = entry  # surface each confirmed safety item to the live work-order feed
+        return view
 
     return _safety_view(state)
 
@@ -259,12 +265,18 @@ def procedure_step(state: SessionState, args: dict) -> ToolResult:
     proc = state.active_procedure
     steps = proc["steps"]
     if action == "next":
+        done = steps[proc["index"]]  # the step the tech just completed
+        entry = state.add_log("procedure_step", f"Step {done.get('n')} done: {done.get('text')}", step=done.get("n"))
         if proc["index"] >= len(steps) - 1:
             title = proc["title"]
             state.add_log("procedure", f"Completed procedure: {title}")
             state.active_procedure = None
-            return ToolResult(output={"complete": True, "message": f"{title} complete."}, panel={"panel": "procedure", "data": {"mode": "procedure", "complete": True, "title": title}})
+            return ToolResult(output={"complete": True, "message": f"{title} complete."},
+                              panel={"panel": "procedure", "data": {"mode": "procedure", "complete": True, "title": title}}, log=entry)
         proc["index"] += 1
+        view = _procedure_view(state)
+        view.log = entry  # surface the completed step to the live work-order feed
+        return view
     elif action in ("previous", "back"):
         proc["index"] = max(0, proc["index"] - 1)
     return _procedure_view(state)
@@ -370,8 +382,13 @@ def hide_panel(state: SessionState, args: dict) -> ToolResult:
     panel = str(args.get("panel", "")).lower()
     if panel == "all":
         state.visible_panels.clear()
+        state.active_schematic = state.schematic_focus = state.active_highlight = None
     else:
         state.visible_panels.discard(panel)
+        if panel == "schematic":
+            state.active_schematic = state.schematic_focus = None
+        elif panel == "overview":
+            state.active_highlight = None
     return ToolResult(output={"hidden": panel}, control={"action": "hide_panel", "panel": panel})
 
 
@@ -386,6 +403,7 @@ def rotate_model(state: SessionState, args: dict) -> ToolResult:
     if axis not in ("x", "y", "z"):
         axis = "y"
     state.visible_panels.add("model")
+    state.model_rotation[axis] = (state.model_rotation.get(axis, 0) + degrees) % 360
     return ToolResult(
         output={"rotated": degrees, "axis": axis},
         control={"action": "rotate_model", "degrees": degrees, "axis": axis},
@@ -394,6 +412,7 @@ def rotate_model(state: SessionState, args: dict) -> ToolResult:
 
 def reset_view(state: SessionState, args: dict) -> ToolResult:
     """Restore the 3D model's default camera + orientation."""
+    state.model_rotation = {"x": 0, "y": 0, "z": 0}
     return ToolResult(output={"view": "reset"}, control={"action": "reset_view"})
 
 
@@ -410,6 +429,7 @@ def highlight_component(state: SessionState, args: dict) -> ToolResult:
     reveal = bool(args.get("reveal", True))
     if reveal:
         state.visible_panels.add("overview")
+    state.active_highlight = hot.get("label") or key
     return ToolResult(
         output={"highlighted": key, "label": hot.get("label")},
         control={"action": "highlight", "component": key, "svg_id": hot.get("svg"), "label": hot.get("label"), "reveal": reveal},
@@ -418,6 +438,7 @@ def highlight_component(state: SessionState, args: dict) -> ToolResult:
 
 
 def clear_highlight(state: SessionState, args: dict) -> ToolResult:
+    state.active_highlight = None
     return ToolResult(output={"highlight": "cleared"}, control={"action": "clear_highlight"})
 
 

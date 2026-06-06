@@ -21,6 +21,16 @@ def _has(text: str, *words: str) -> bool:
     return any(w in text for w in words)
 
 
+_SWITCH_PHRASES = ("different machine", "another machine", "new machine", "other machine",
+                   "switched machine", "switch machines", "this is a different", "not the same machine",
+                   "switched to a", "now on a different")
+
+
+def is_machine_switch(text: str) -> bool:
+    """The tech has clearly moved to a DIFFERENT machine than the loaded hero asset."""
+    return _has((text or "").lower(), *_SWITCH_PHRASES)
+
+
 # panel-name phrases → canonical panel id (for hide/clear)
 _HIDE_PANEL_WORDS = [
     ("machine data", "machine_data"), ("machine-data", "machine_data"), ("data panel", "machine_data"),
@@ -66,9 +76,7 @@ def infer_tools(transcript: str, ctx: dict | None = None) -> list[tuple[str, dic
                     break
 
     # ── machine switch → clear the hero machine-data panel ────────────────────
-    if _has(t, "different machine", "another machine", "new machine", "other machine",
-            "switched machine", "switch machines", "this is a different", "not the same machine",
-            "switched to a", "now on a different"):
+    if _has(t, *_SWITCH_PHRASES):
         calls.append(("hide_panel", {"panel": "machine_data"}))
 
     # ── 3D model: show / rotate (+context-carry) / reset ──────────────────────
@@ -137,7 +145,7 @@ def infer_tools(transcript: str, ctx: dict | None = None) -> list[tuple[str, dic
 
     # ── detailed schematic diagrams (explicit) ────────────────────────────────
     if _has(t, "schematic", "diagram", "drawing", "blueprint", "spindle assembly",
-            "turret assembly", "axis layout", "axes layout", "cross section", "cross-section"):
+            "turret assembly", "axis layout", "axes layout", "access layout", "cross section", "cross-section"):
         d = catalog.resolve_diagram(t)
         if d:
             calls.append(("show_schematic", {"diagram_type": d[0]}))

@@ -33,6 +33,7 @@ interface State {
   modelCmd: { action: "rotate" | "reset" | "none"; degrees?: number; axis?: "x" | "y" | "z"; seq: number };
   highlight: { component: string; svg_id: string; label: string; seq: number } | null;
   annotate: { label: string; region: string; seq: number } | null;
+  assetLabel: string | null;
 }
 
 const initial: State = {
@@ -54,6 +55,7 @@ const initial: State = {
   modelCmd: { action: "none", seq: 0 },
   highlight: null,
   annotate: null,
+  assetLabel: null,
 };
 
 type Action =
@@ -154,6 +156,8 @@ function applyControl(s: State, action: string, payload: Record<string, unknown>
       return { ...s, highlight: null };
     case "annotate_field":
       return { ...s, annotate: { label: String(payload.label || ""), region: String(payload.region || "center"), seq: (s.annotate?.seq ?? 0) + 1 } };
+    case "asset":
+      return { ...s, assetLabel: String(payload.label || "") };
     default:
       return s;
   }

@@ -37,6 +37,14 @@ class FakeSession:
     async def cancel_response(self):
         self.cancelled += 1
 
+    async def inject_message(self, text, role="user"):
+        self.injected = getattr(self, "injected", [])
+        self.injected.append((role, text))
+
+    async def send_function_result(self, call_id, output):
+        self.results = getattr(self, "results", [])
+        self.results.append((call_id, output))
+
     async def close(self):
         self.closed = True
         self.connected = False
@@ -80,6 +88,10 @@ def bridge():
     b._intent_ctx = {}
     b._last_highlight = None
     b._last_audio_at = 0.0
+    b._native_tools_seen = False
+    b._outcome_cache = {}
+    b._ui_state_hash = ""
+    b._asset_label = b.orch.state.asset_id
     return b
 
 
@@ -100,8 +112,11 @@ async def test_apply_tool_runs_emits_panel_and_chip_and_dedups(bridge):
     assert a is not None
     assert "panel" in _types(bridge) and "tool" in _types(bridge)
     assert any(m["type"] == "agent" and m["agent"] == "parts" for m in bridge.ws.json_sent)
+    n_tool_before = sum(1 for m in bridge.ws.json_sent if m["type"] == "tool")
     b = await bridge._apply_tool("lookup_torque", {"fastener_id": "tool_holder_bolt"})
-    assert b is None  # duplicate within window
+    assert b is a  # deduped -> cached outcome (so the native closed loop still gets the result)
+    n_tool_after = sum(1 for m in bridge.ws.json_sent if m["type"] == "tool")
+    assert n_tool_after == n_tool_before  # but not re-executed / re-emitted to the browser
 
 
 # ── intent drives the panels from the user's transcript ─────────────────────
@@ -172,6 +187,67 @@ async def test_auto_highlight_does_not_pop_the_overview_panel(bridge):
 async def test_auto_highlight_skips_word_substring(bridge):
     await bridge._on_assistant_transcript("You should embed the sensor before tightening.")
     assert not any(m["type"] == "control" and m.get("action") == "highlight" for m in bridge.ws.json_sent)
+
+
+# ── native function-calling closed loop ──────────────────────────────────────
+async def test_native_function_call_executes_and_returns_result(bridge):
+    from app.realtime.events import FunctionCallDone
+
+    await bridge._handle_server_event(FunctionCallDone(call_id="c1", name="show_schematic", arguments={"diagram_type": "axes"}))
+    assert bridge._native_tools_seen is True
+    assert any(m["type"] == "panel" for m in bridge.ws.json_sent)  # executed
+    assert getattr(bridge.session, "results", []) and bridge.session.results[0][0] == "c1"  # result fed back
+
+
+async def test_apply_tool_injects_screen_state(bridge):
+    await bridge._apply_tool("show_schematic", {"diagram_type": "spindle"})
+    injected = getattr(bridge.session, "injected", [])
+    assert any(role == "system" and "SCREEN STATE" in text and "spindle" in text for role, text in injected)
+
+
+def test_build_ui_state_reflects_panels():
+    from app.ws.gateway import build_ui_state
+    from app.agents.session_state import SessionState
+
+    s = SessionState()
+    assert "nothing" in build_ui_state(s)
+    s.visible_panels.add("schematic")
+    s.active_schematic = "axes"
+    s.schematic_focus = "X axis"
+    out = build_ui_state(s)
+    assert "axes schematic" in out and "X axis" in out
+
+
+def test_procedure_step_auto_logs_each_step():
+    from app.agents.tools.handlers import start_procedure, procedure_step
+    from app.agents.session_state import SessionState
+    from app.data.catalog import catalog
+
+    s = SessionState()
+    pid = catalog.procedure_ids()[0]
+    start_procedure(s, {"procedure_id": pid})
+    n0 = len(s.work_log)
+    procedure_step(s, {"action": "next"})
+    assert len(s.work_log) > n0
+    assert any(e["type"] == "procedure_step" for e in s.work_log)
+
+
+async def test_append_image_gated_on_buffer_audio():
+    from app.realtime.session import QwenRealtimeSession
+
+    sess = QwenRealtimeSession.__new__(QwenRealtimeSession)
+    sent: list = []
+
+    async def fake_send(e):
+        sent.append(e)
+
+    sess._send = fake_send  # type: ignore[method-assign]
+    sess._buffer_has_audio = False
+    await sess.append_image(b"\xff\xd8\xff")
+    assert sent == []  # no uncommitted audio -> skip (no 'append image before append audio' spam)
+    sess._buffer_has_audio = True
+    await sess.append_image(b"\xff\xd8\xff")
+    assert len(sent) == 1
 
 
 def test_tool_agent_map_is_valid():

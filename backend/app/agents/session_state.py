@@ -31,6 +31,11 @@ class SessionState:
     active_agent: str = "orchestrator"
     vision_active: bool = False
     visible_panels: set[str] = field(default_factory=set)
+    # What's displayed (for the SCREEN STATE the model is told each change).
+    active_schematic: str | None = None   # diagram_type currently rendered
+    schematic_focus: str | None = None    # last component navigated/zoomed on the schematic
+    active_highlight: str | None = None    # component highlighted on the overview map
+    model_rotation: dict[str, int] = field(default_factory=lambda: {"x": 0, "y": 0, "z": 0})
     clock: Callable[[], datetime] = _utc_now
 
     def __post_init__(self) -> None:
