@@ -20,6 +20,7 @@ class FakeSession:
         self.images = 0
         self.cancelled = 0
         self.connected = True
+        self.closed = False
 
     async def connect(self):  # pragma: no cover
         pass
@@ -37,7 +38,8 @@ class FakeSession:
         self.cancelled += 1
 
     async def close(self):
-        pass
+        self.closed = True
+        self.connected = False
 
 
 class FakeWS:
@@ -77,6 +79,7 @@ def bridge():
     b._seen_event_types = set()
     b._intent_ctx = {}
     b._last_highlight = None
+    b._last_audio_at = 0.0
     return b
 
 
@@ -203,7 +206,18 @@ def test_non_latin_detection():
 def test_benign_error_classification():
     assert _is_benign_error("Error append image before append audio.")
     assert _is_benign_error("Response timeout.")
+    assert _is_benign_error("Your session was closed because no response was generated for 300 seconds.")
     assert not _is_benign_error("Invalid API key")
+
+
+async def test_vision_off_closes_idle_session(bridge):
+    bridge.session.connected = True
+    bridge._last_audio_at = 0.0  # never talked
+    bridge._want_session.set()
+    import json as _json
+    await bridge._handle_client_json(_json.dumps({"type": "control", "action": "vision_off"}))
+    assert bridge.session.closed is True  # idle session proactively closed
+    assert not bridge._want_session.is_set()
 
 
 def test_resume_summary_is_compact_and_contextual():

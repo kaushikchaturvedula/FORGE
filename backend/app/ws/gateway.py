@@ -48,7 +48,15 @@ DEDUP_WINDOW_S = 4.0
 MAX_CONNECT_FAILURES = 5
 
 # Realtime warnings that are non-fatal noise — logged, never shown as a red banner.
-_BENIGN_ERROR_MARKERS = ("append image before append audio", "response timeout")
+# The idle/response timeouts just mean "nobody spoke for a while"; the downstream loop
+# parks and transparently reopens the session on the next utterance.
+_BENIGN_ERROR_MARKERS = (
+    "append image before append audio",
+    "response timeout",
+    "no response was generated",
+    "idle_timeout",
+    "session was closed",
+)
 
 
 def _is_benign_error(message: str) -> bool:
@@ -135,6 +143,7 @@ class RealtimeBridge:
         self._seen_event_types: set[str] = set()
         self._intent_ctx: dict = {}  # per-connection context for intent (e.g. last rotate)
         self._last_highlight: str | None = None  # de-dupe auto-highlights
+        self._last_audio_at = 0.0  # monotonic time of the last real mic audio
 
     # ── lifecycle ────────────────────────────────────────────────────────────
     async def run(self) -> None:
@@ -223,6 +232,7 @@ class RealtimeBridge:
 
     async def _send_audio(self, pcm: bytes) -> None:
         # Talking is what triggers (and keeps) the session — connect lazily here.
+        self._last_audio_at = time.monotonic()
         self._want_session.set()
         if not await self._ensure_session():
             return
@@ -261,11 +271,21 @@ class RealtimeBridge:
                 except Exception as exc:  # noqa: BLE001
                     logger.debug("cancel_response: %r", exc)
             elif action in ("vision_on", "vision_off"):
-                # The client tells us vision is on/off; the brain uses this to decide when
-                # to DEFER_VISION, and it gates frame forwarding. The realtime voice prompt
-                # already covers vision, so no session.update is needed.
+                # The client tells us vision is on/off; it gates frame forwarding. The
+                # realtime voice prompt already covers vision, so no session.update is needed.
                 self.orch.state.vision_active = action == "vision_on"
                 logger.info("vision %s", "on" if self.orch.state.vision_active else "off")
+                # If the ONLY reason the session was open was vision, and the tech isn't
+                # talking, close it now instead of letting it sit idle for 300 s and trip the
+                # server's idle-timeout (the next utterance reopens it lazily).
+                if action == "vision_off" and self.session.connected \
+                        and time.monotonic() - self._last_audio_at > 30.0:
+                    self._want_session.clear()
+                    try:
+                        await self.session.close()
+                        logger.info("closed idle realtime session (vision off, not talking)")
+                    except Exception as exc:  # noqa: BLE001
+                        logger.debug("idle close: %r", exc)
 
     # ── downstream: Qwen -> browser (lazy connect + resume) ──────────────────
     async def _downstream(self) -> None:
