@@ -34,7 +34,9 @@ class Settings(BaseSettings):
     realtime_model: str = Field(
         default="qwen3.5-omni-plus-realtime", alias="FORGE_REALTIME_MODEL"
     )
-    voice: str = Field(default="Cherry", alias="FORGE_VOICE")
+    # Voice for qwen3.5-omni-*-realtime (Cherry is flash/turbo-only and is rejected on
+    # plus). Valid plus voices include Tina (default), Ethan, Serena, Dylan, Sunny, …
+    voice: str = Field(default="Tina", alias="FORGE_VOICE")
 
     # Turn detection: "server_vad" (broadly supported) or "semantic_vad" (qwen3.5+).
     vad_type: str = Field(default="server_vad", alias="FORGE_VAD_TYPE")
