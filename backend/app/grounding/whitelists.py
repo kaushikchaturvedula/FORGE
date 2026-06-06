@@ -143,7 +143,7 @@ def validate(tool_name: str, args: dict) -> ValidationResult:
             return _reject(f"I don't have a {panel!r} panel.")
         return _OK
 
-    if tool_name == "rotate_model":
+    if tool_name in ("rotate_model", "set_rotation"):
         axis = str(args.get("axis", "y")).lower()
         if axis not in ROTATE_AXES:
             return _reject("I can rotate on the x, y, or z axis.")

@@ -219,6 +219,17 @@ TOOLS: dict[str, dict[str, Any]] = {
         },
         ["degrees"],
     ),
+    "set_rotation": _fn(
+        "set_rotation",
+        "Set the 3D model to an ABSOLUTE angle on an axis (does NOT add to the current angle). "
+        "Use for a specific target angle ('rotate to 90', 'make it 90 on X') and for corrections "
+        "('30, sorry 90') — emit ONE set_rotation with the final value, not stacked rotate_model calls.",
+        {
+            "degrees": {"type": "number", "description": "Absolute angle in degrees."},
+            "axis": {"type": "string", "enum": sorted(wl.ROTATE_AXES), "description": "Axis (default y)."},
+        },
+        ["degrees"],
+    ),
     "reset_view": _fn(
         "reset_view",
         "Reset the 3D model to its default camera and orientation.",

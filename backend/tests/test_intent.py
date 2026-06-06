@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from app.agents.intent import auto_highlight, infer_tools
+from app.agents.intent import infer_tools
 from app.data.catalog import catalog, catalog_brief
 
 
@@ -80,12 +80,6 @@ def test_record_log_photo_and_machine_switch():
     assert ("hide_panel", {"panel": "machine_data"}) in infer_tools("this is a different machine now", {})
 
 
-def test_auto_highlight_from_forge_speech():
-    assert auto_highlight("the through-spindle coolant union is part PL45-SP-CU-020") == \
-        ("highlight_component", {"name": "coolant_union", "reveal": False})
-    assert auto_highlight("that's a clean cut, nice surface finish") is None
-
-
 # ── regression guards (from the adversarial review) ─────────────────────────
 def test_temperature_in_degrees_still_records():
     # "degrees" must NOT suppress a temperature measurement (only a real rotate does).
@@ -104,7 +98,7 @@ def test_hotspot_word_boundary_no_false_positives():
     from app.data.catalog import catalog
     assert catalog.resolve_hotspot("you should embed the part fully") is None
     assert catalog.resolve_hotspot("the seabed sample") is None
-    assert auto_highlight("I embedded the sensor there") is None
+    assert catalog.resolve_hotspot("I embedded the sensor there") is None
     # but a real standalone word still resolves
     assert catalog.resolve_hotspot("check the bed for chips")[0] == "bed"
 

@@ -410,6 +410,24 @@ def rotate_model(state: SessionState, args: dict) -> ToolResult:
     )
 
 
+def set_rotation(state: SessionState, args: dict) -> ToolResult:
+    """Set the 3D model to an ABSOLUTE angle on an axis (not additive). Use for a specific
+    target angle ("rotate to 90", "make it 90 on X") and for in-utterance corrections."""
+    try:
+        degrees = int(float(args.get("degrees", 0)))
+    except (TypeError, ValueError):
+        degrees = 0
+    axis = str(args.get("axis", "y")).lower()
+    if axis not in ("x", "y", "z"):
+        axis = "y"
+    state.visible_panels.add("model")
+    state.model_rotation[axis] = degrees % 360
+    return ToolResult(
+        output={"set_to": degrees, "axis": axis},
+        control={"action": "set_rotation", "degrees": degrees, "axis": axis},
+    )
+
+
 def reset_view(state: SessionState, args: dict) -> ToolResult:
     """Restore the 3D model's default camera + orientation."""
     state.model_rotation = {"x": 0, "y": 0, "z": 0}
@@ -418,22 +436,42 @@ def reset_view(state: SessionState, args: dict) -> ToolResult:
 
 # ── voice-driven highlighting (overview schematic) ───────────────────────────
 def highlight_component(state: SessionState, args: dict) -> ToolResult:
-    """Point at a component on the overview schematic. The name is whitelisted against the
-    hotspot registry upstream, so resolve always hits. `reveal` (default True) opens the
-    overview panel; the auto-highlight path passes reveal=False so a passing mention only
-    pulses the map when it's already open."""
-    resolved = catalog.resolve_hotspot(str(args.get("name", "")))
-    if resolved is None:  # defensive — grounding should have rejected
-        return ToolResult(output={"error": "unknown_component", "message": "I can't point to that part."})
+    """Point at a component. PREFER the detailed schematic (proven bbox-overlay highlight,
+    on the surface the tech is actually viewing): if the part exists in a spindle/turret/axes
+    diagram, show that schematic and pulse the part there. Only whole-machine parts (bed,
+    chuck, control box, …) that aren't in any detailed diagram fall back to the overview map."""
+    name = str(args.get("name", ""))
+    # 1) Detailed schematic — find which diagram contains this component.
+    for dkey in catalog.diagram_types():
+        comp = catalog.resolve_component(dkey, name)
+        if comp:
+            ckey, c = comp
+            _, diagram = catalog.resolve_diagram(dkey)
+            state.visible_panels.add("schematic")
+            state.active_schematic = dkey
+            state.schematic_focus = c.get("label") or ckey
+            return ToolResult(
+                output={"highlighted": ckey, "label": c.get("label"), "on": diagram.get("title")},
+                panel={"panel": "schematic", "data": {
+                    "diagram_type": dkey, "title": diagram.get("title"),
+                    "src": f"/api/schematics/{diagram.get('file')}", "viewbox": diagram.get("viewbox"),
+                    "components": diagram.get("components", []),
+                    "navigate": {"action": "jump", "target": ckey, "center": c.get("center"), "bbox": c.get("bbox"), "label": c.get("label")},
+                }},
+                control={"action": "show_panel", "panel": "schematic"},
+            )
+    # 2) Whole-machine part — fall back to the overview map.
+    resolved = catalog.resolve_hotspot(name)
+    if resolved is None:  # grounding should have rejected; be honest if it slips through
+        return ToolResult(output={"ok": False, "error": "unknown_component",
+                                  "message": f"I can't point to {name!r} — it isn't on a schematic I have."})
     key, hot = resolved
-    reveal = bool(args.get("reveal", True))
-    if reveal:
-        state.visible_panels.add("overview")
+    state.visible_panels.add("overview")
     state.active_highlight = hot.get("label") or key
     return ToolResult(
-        output={"highlighted": key, "label": hot.get("label")},
-        control={"action": "highlight", "component": key, "svg_id": hot.get("svg"), "label": hot.get("label"), "reveal": reveal},
-        frontend_extra=[protocol_show_overview()] if reveal else [],
+        output={"highlighted": key, "label": hot.get("label"), "on": "machine map"},
+        control={"action": "highlight", "component": key, "svg_id": hot.get("svg"), "label": hot.get("label"), "reveal": True},
+        frontend_extra=[protocol_show_overview()],
     )
 
 
@@ -494,6 +532,7 @@ HANDLERS: dict[str, Callable[[SessionState, dict], ToolResult]] = {
     "show_panel": show_panel,
     "hide_panel": hide_panel,
     "rotate_model": rotate_model,
+    "set_rotation": set_rotation,
     "reset_view": reset_view,
     "highlight_component": highlight_component,
     "clear_highlight": clear_highlight,

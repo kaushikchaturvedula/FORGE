@@ -30,7 +30,7 @@ interface State {
   visionActive: boolean;
   recentTools: ToolTick[];
   error: string | null;
-  modelCmd: { action: "rotate" | "reset" | "none"; degrees?: number; axis?: "x" | "y" | "z"; seq: number };
+  modelCmd: { action: "rotate" | "set" | "reset" | "none"; degrees?: number; axis?: "x" | "y" | "z"; seq: number };
   highlight: { component: string; svg_id: string; label: string; seq: number } | null;
   annotate: { label: string; region: string; seq: number } | null;
   assetLabel: string | null;
@@ -142,6 +142,12 @@ function applyControl(s: State, action: string, payload: Record<string, unknown>
         ...s,
         visible: { ...s.visible, model: true },
         modelCmd: { action: "rotate", degrees: Number(payload.degrees) || 30, axis: (payload.axis as "x" | "y" | "z") || "y", seq: s.modelCmd.seq + 1 },
+      };
+    case "set_rotation":
+      return {
+        ...s,
+        visible: { ...s.visible, model: true },
+        modelCmd: { action: "set", degrees: Number(payload.degrees) || 0, axis: (payload.axis as "x" | "y" | "z") || "y", seq: s.modelCmd.seq + 1 },
       };
     case "reset_view":
       return { ...s, visible: { ...s.visible, model: true }, modelCmd: { action: "reset", seq: s.modelCmd.seq + 1 } };

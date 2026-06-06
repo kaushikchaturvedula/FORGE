@@ -7,7 +7,7 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 // panel is for whole-machine orientation: drag to orbit, or say "rotate the model 30
 // degrees / on the x axis / reset the view". Each command arrives as a bumped `cmd.seq`.
 export interface ModelCmd {
-  action: "rotate" | "reset" | "none";
+  action: "rotate" | "set" | "reset" | "none";
   degrees?: number;
   axis?: "x" | "y" | "z";
   seq: number;
@@ -123,6 +123,12 @@ export function ModelPanel({ cmd }: { cmd: ModelCmd }) {
       if (cmd.axis === "x") model.rotation.x += rad;
       else if (cmd.axis === "z") model.rotation.z += rad;
       else model.rotation.y += rad;
+    } else if (cmd.action === "set" && model && home) {
+      // Absolute angle on the named axis (relative to the model's home orientation).
+      const rad = ((cmd.degrees ?? 0) * Math.PI) / 180;
+      if (cmd.axis === "x") model.rotation.x = home.rot.x + rad;
+      else if (cmd.axis === "z") model.rotation.z = home.rot.z + rad;
+      else model.rotation.y = home.rot.y + rad;
     } else if (cmd.action === "reset" && model && camera && controls && home) {
       model.rotation.copy(home.rot);
       camera.position.copy(home.pos);

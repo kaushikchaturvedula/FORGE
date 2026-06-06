@@ -96,7 +96,9 @@ def infer_tools(transcript: str, ctx: dict | None = None) -> list[tuple[str, dic
         degrees = int(deg_match.group(1)) if deg_match else int(ctx.get("rotate_deg", 30))
         ax = axis or ctx.get("rotate_axis", "y")
         ctx["rotate_deg"], ctx["rotate_axis"] = degrees, ax
-        calls.append(("rotate_model", {"degrees": degrees, "axis": ax}))
+        # "rotate TO 90" / "set it to 90" / "make it 90" = absolute; otherwise relative.
+        absolute = _has(t, "rotate to", "rotate it to", "set it to", "set the rotation", "make it", "orient to", "go to")
+        calls.append(("set_rotation" if absolute else "rotate_model", {"degrees": degrees, "axis": ax}))
         model_cmd = True
     if _has(t, "reset the view", "reset view", "reset the model", "default view", "recenter",
             "re-center", "reset the camera", "center the model"):
@@ -195,15 +197,6 @@ def infer_tools(transcript: str, ctx: dict | None = None) -> list[tuple[str, dic
             seen.add(key)
             out.append((name, args))
     return out
-
-
-def auto_highlight(spoken_text: str) -> tuple[str, dict] | None:
-    """When FORGE *names* a component in its spoken answer, point at it on the overview
-    schematic. reveal=False so a passing mention pulses the map only if it's already open
-    (it doesn't pop the schematic mid-answer); the explicit "where's the X" command reveals
-    it. Returns a highlight_component call or None."""
-    h = catalog.resolve_hotspot(spoken_text)
-    return ("highlight_component", {"name": h[0], "reveal": False}) if h else None
 
 
 def _parse_measurement(t: str) -> dict | None:

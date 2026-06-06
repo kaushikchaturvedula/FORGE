@@ -91,6 +91,7 @@ TOOL_AGENT = {
     "generate_report": "handoff",
     "prepare_handoff": "handoff",
     "rotate_model": "schematic",
+    "set_rotation": "schematic",
     "reset_view": "schematic",
     "highlight_component": "schematic",
     "clear_highlight": "schematic",
@@ -188,6 +189,8 @@ class RealtimeBridge:
         self._outcome_cache: dict[str, object] = {}  # last ToolOutcome per dedup key
         self._ui_state_hash = ""  # last injected SCREEN STATE (avoid re-injecting unchanged)
         self._asset_label = self.orch.state.asset_id  # header indicator (dims on machine switch)
+        self._response_active = False  # a model response is currently streaming
+        self._pending_response = False  # create a follow-up response once the current one ends
 
     # ── lifecycle ────────────────────────────────────────────────────────────
     async def run(self) -> None:
@@ -380,7 +383,8 @@ class RealtimeBridge:
             await self._safe_send_json(protocol.transcript("assistant", delta=evt.text))
         elif isinstance(evt, events.OutputTranscriptDone):
             await self._safe_send_json(protocol.transcript("assistant", text=evt.text, final=True))
-            await self._on_assistant_transcript(evt.text)
+            # NOTE: no auto-highlight from FORGE's own speech — highlighting fires ONLY on an
+            # explicit user request (intent / native highlight_component), never spontaneously.
         elif isinstance(evt, events.InputTranscriptDelta):
             pass  # user partials are dropped (avoids flickering mis-transcriptions)
         elif isinstance(evt, events.InputTranscriptDone):
@@ -394,9 +398,17 @@ class RealtimeBridge:
         elif isinstance(evt, events.InputAudioCommitted):
             self.session.mark_buffer_committed()  # input buffer emptied — no images until new speech
         elif isinstance(evt, events.ResponseCreated):
+            self._response_active = True
             await self._safe_send_json(protocol.state("speaking"))
         elif isinstance(evt, events.ResponseDone):
+            self._response_active = False
             await self._safe_send_json(protocol.state("listening", self._remaining()))
+            if self._pending_response:  # the function-call response ended — now speak the result
+                self._pending_response = False
+                try:
+                    await self.session.create_response()
+                except Exception as exc:  # noqa: BLE001
+                    logger.debug("deferred create_response: %r", exc)
         elif isinstance(evt, events.SessionUpdated):
             has_tools = bool(evt.session.get("tools"))
             logger.info("session.updated echo: tools_supported=%s keys=%s", has_tools, sorted(evt.session)[:12])
@@ -408,9 +420,18 @@ class RealtimeBridge:
             outcome = await self._apply_tool(evt.name, evt.arguments)
             result = outcome.model_output if outcome is not None else {"ok": True, "note": "already applied"}
             try:
-                await self.session.send_function_result(evt.call_id, result)
+                await self.session.send_function_output(evt.call_id, result)
             except Exception as exc:  # noqa: BLE001
-                logger.debug("send_function_result: %r", exc)
+                logger.debug("send_function_output: %r", exc)
+            # Speak the confirmation, but only AFTER the function-call response finishes
+            # (creating one now collides with the active response and the confirmation is lost).
+            if self._response_active:
+                self._pending_response = True
+            else:
+                try:
+                    await self.session.create_response()
+                except Exception as exc:  # noqa: BLE001
+                    logger.debug("create_response: %r", exc)
         elif isinstance(evt, events.RealtimeError):
             if _is_benign_error(evt.message):
                 logger.info("realtime notice (benign): %s", evt.message)  # not shown to user
@@ -439,20 +460,6 @@ class RealtimeBridge:
                 self._last_highlight = args.get("name")
         if intent.is_machine_switch(text):
             await self._set_asset_label("general guidance")
-
-    async def _on_assistant_transcript(self, text: str) -> None:
-        """When FORGE *names* a component in its spoken answer, auto-point at it on the
-        overview schematic — so the console highlights whatever it's talking about."""
-        if not text or not text.strip():
-            return
-        call = intent.auto_highlight(text)
-        if call is None:
-            return
-        name, args = call
-        if args.get("name") == self._last_highlight:
-            return  # already pointing there
-        self._last_highlight = args.get("name")
-        await self._apply_tool(name, args)
 
     # ── tool execution (panel + routing-chip updates) ────────────────────────
     async def _apply_tool(self, name: str, args: dict):

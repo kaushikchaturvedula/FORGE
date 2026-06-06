@@ -135,9 +135,13 @@ class QwenRealtimeSession:
     async def cancel_response(self) -> None:
         await self._send(events.response_cancel())
 
-    async def send_function_result(self, call_id: str, output: Any) -> None:
+    async def send_function_output(self, call_id: str, output: Any) -> None:
+        """Return a tool result to the model. The caller creates the follow-up response
+        separately (once the current function-call response is done) so they don't collide."""
         await self._send(events.function_call_output(call_id, output))
-        # Prompt the model to continue speaking with the grounded result.
+
+    async def send_function_result(self, call_id: str, output: Any) -> None:
+        await self.send_function_output(call_id, output)
         await self._send(events.response_create())
 
     async def inject_message(self, text: str, role: str = "user") -> None:

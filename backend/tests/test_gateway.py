@@ -19,6 +19,7 @@ class FakeSession:
     def __init__(self):
         self.images = 0
         self.cancelled = 0
+        self.responses = 0
         self.connected = True
         self.closed = False
 
@@ -37,13 +38,20 @@ class FakeSession:
     async def cancel_response(self):
         self.cancelled += 1
 
+    async def create_response(self):
+        self.responses += 1
+
     async def inject_message(self, text, role="user"):
         self.injected = getattr(self, "injected", [])
         self.injected.append((role, text))
 
-    async def send_function_result(self, call_id, output):
+    async def send_function_output(self, call_id, output):
         self.results = getattr(self, "results", [])
         self.results.append((call_id, output))
+
+    async def send_function_result(self, call_id, output):
+        await self.send_function_output(call_id, output)
+        self.responses += 1
 
     async def close(self):
         self.closed = True
@@ -92,6 +100,8 @@ def bridge():
     b._outcome_cache = {}
     b._ui_state_hash = ""
     b._asset_label = b.orch.state.asset_id
+    b._response_active = False
+    b._pending_response = False
     return b
 
 
@@ -151,42 +161,49 @@ async def test_english_transcript_is_shown(bridge):
     assert any(m["type"] == "transcript" and m["role"] == "user" for m in bridge.ws.json_sent)
 
 
-async def test_highlight_tool_emits_control_and_reveals_overview(bridge):
+async def test_highlight_detailed_part_uses_the_schematic(bridge):
+    # The drawbar lives in the spindle schematic -> highlight on the proven bbox-overlay
+    # surface (a navigate jump), not the separate overview map.
     await bridge._apply_tool("highlight_component", {"name": "drawbar"})
     msgs = bridge.ws.json_sent
-    assert any(m["type"] == "control" and m["action"] == "highlight" and m["svg_id"] == "cmp-drawbar" for m in msgs)
-    assert any(m["type"] == "panel" and m["panel"] == "overview" for m in msgs)  # overview revealed
+    panel = next(m for m in msgs if m["type"] == "panel" and m["panel"] == "schematic")
+    assert panel["data"]["diagram_type"] == "spindle"
+    assert panel["data"]["navigate"]["target"] == "drawbar"
 
 
-async def test_rotate_model_emits_control(bridge):
+async def test_highlight_whole_machine_part_uses_overview(bridge):
+    # The control box isn't in any detailed diagram -> overview map.
+    await bridge._apply_tool("highlight_component", {"name": "control box"})
+    msgs = bridge.ws.json_sent
+    assert any(m["type"] == "control" and m.get("action") == "highlight" and m["svg_id"] == "cmp-control_box" for m in msgs)
+    assert any(m["type"] == "panel" and m["panel"] == "overview" for m in msgs)
+
+
+async def test_rotate_and_set_rotation_emit_controls(bridge):
     await bridge._apply_tool("rotate_model", {"degrees": 90, "axis": "x"})
-    assert any(m["type"] == "control" and m["action"] == "rotate_model" and m["degrees"] == 90 and m["axis"] == "x"
-               for m in bridge.ws.json_sent)
+    assert any(m.get("action") == "rotate_model" and m["degrees"] == 90 and m["axis"] == "x"
+               for m in bridge.ws.json_sent if m["type"] == "control")
+    bridge.ws.json_sent.clear()
+    await bridge._apply_tool("set_rotation", {"degrees": 90, "axis": "x"})
+    assert any(m.get("action") == "set_rotation" and m["degrees"] == 90 for m in bridge.ws.json_sent if m["type"] == "control")
 
 
 async def test_unknown_highlight_is_grounded_out(bridge):
-    # not a hotspot -> grounding rejects -> no highlight control emitted
+    # not a hotspot -> grounding rejects -> no highlight control / schematic emitted
     await bridge._apply_tool("highlight_component", {"name": "flux capacitor"})
     assert not any(m.get("action") == "highlight" for m in bridge.ws.json_sent if m["type"] == "control")
 
 
-async def test_auto_highlight_on_assistant_transcript(bridge):
-    await bridge._on_assistant_transcript("Let me check the through-spindle coolant union for you.")
-    assert any(m["type"] == "control" and m.get("action") == "highlight" and m["component"] == "coolant_union"
-               for m in bridge.ws.json_sent)
+async def test_function_confirmation_deferred_until_response_done(bridge):
+    # A native call while a response is active must NOT create the confirmation immediately
+    # (that collides); it's created when the function-call response finishes.
+    from app.realtime.events import FunctionCallDone, ResponseDone
 
-
-async def test_auto_highlight_does_not_pop_the_overview_panel(bridge):
-    # A passing mention pulses (reveal=False) but must NOT force-reveal the overview panel.
-    await bridge._on_assistant_transcript("The chuck pressure looks normal.")
-    ctrl = [m for m in bridge.ws.json_sent if m["type"] == "control" and m.get("action") == "highlight"]
-    assert ctrl and ctrl[0]["reveal"] is False
-    assert not any(m["type"] == "panel" and m["panel"] == "overview" for m in bridge.ws.json_sent)
-
-
-async def test_auto_highlight_skips_word_substring(bridge):
-    await bridge._on_assistant_transcript("You should embed the sensor before tightening.")
-    assert not any(m["type"] == "control" and m.get("action") == "highlight" for m in bridge.ws.json_sent)
+    bridge._response_active = True
+    await bridge._handle_server_event(FunctionCallDone(call_id="c9", name="reset_view", arguments={}))
+    assert bridge.session.responses == 0 and bridge._pending_response is True  # deferred
+    await bridge._handle_server_event(ResponseDone(response_id="r9"))
+    assert bridge.session.responses == 1 and bridge._pending_response is False  # now spoken
 
 
 # ── native function-calling closed loop ──────────────────────────────────────
