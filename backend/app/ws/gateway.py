@@ -65,6 +65,24 @@ def _mostly_cjk(text: str) -> bool:
     return cjk > 0 and cjk >= max(1, latin)
 
 
+# Which specialist "owns" each tool — drives the agent-routing chips in the HUD.
+TOOL_AGENT = {
+    "show_machine_data": "diagnostic",
+    "record_measurement": "diagnostic",
+    "show_schematic": "schematic",
+    "navigate_schematic": "schematic",
+    "lookup_part": "parts",
+    "lookup_torque": "parts",
+    "run_safety_check": "safety",
+    "start_procedure": "procedure",
+    "procedure_step": "procedure",
+    "log_event": "documentation",
+    "capture_photo": "documentation",
+    "generate_report": "handoff",
+    "prepare_handoff": "handoff",
+}
+
+
 def build_resume_summary(state: SessionState) -> str:
     """A compact context string re-injected when the realtime session is resumed."""
     recent = state.work_log[-8:]
@@ -109,9 +127,13 @@ class RealtimeBridge:
         self._want_session = asyncio.Event()
         self._connect_lock = asyncio.Lock()
         self._seen_event_types: set[str] = set()
-        self.sidecar = make_sidecar(self.settings)  # grounding brain (may be a no-op)
-        self._history: list[dict[str, str]] = []  # rolling transcript for the sidecar
-        self._bg_tasks: set[asyncio.Task] = set()  # background sidecar runs
+        self.sidecar = make_sidecar(self.settings)  # the brain (may be a no-op)
+        self._history: list[dict[str, str]] = []  # rolling transcript for the brain
+        self._bg_tasks: set[asyncio.Task] = set()  # background turn handlers
+        # Auto-response suppression: the realtime model only speaks responses WE create.
+        self._expect_response = False
+        self._response_idle = asyncio.Event()
+        self._response_idle.set()
 
     # ── lifecycle ────────────────────────────────────────────────────────────
     async def run(self) -> None:
@@ -162,10 +184,14 @@ class RealtimeBridge:
                     protocol.error("Could not reach the realtime model — check DASHSCOPE_API_KEY / region.")
                 )
                 return False
-            instructions, tools = self.orch.initial_config()
+            # The realtime model is voice + eyes only — thin instructions, NO tools
+            # (the brain owns tools). It never auto-answers data.
+            from app.agents.voice import realtime_instructions
+
+            instructions = realtime_instructions()
             if self._had_activity:
                 instructions = instructions + "\n\nCONTEXT CARRIED OVER:\n" + build_resume_summary(self.orch.state)
-            await self.session.update_session(instructions=instructions, tools=tools)
+            await self.session.update_session(instructions=instructions, tools=[])
             self._connected_at = time.monotonic()
             self._connect_failures = 0
             logger.info("realtime session ready (agent=%s)", self.orch.active_agent)
@@ -236,14 +262,11 @@ class RealtimeBridge:
                 except Exception as exc:  # noqa: BLE001
                     logger.debug("cancel_response: %r", exc)
             elif action in ("vision_on", "vision_off"):
-                # The client (manual 👁 toggle or the agent-driven activate_vision) tells
-                # us vision is on/off. This is what lets the gateway FORWARD frames and
-                # inject the vision banner — without it, frames were silently dropped.
+                # The client tells us vision is on/off; the brain uses this to decide when
+                # to DEFER_VISION, and it gates frame forwarding. The realtime voice prompt
+                # already covers vision, so no session.update is needed.
                 self.orch.state.vision_active = action == "vision_on"
                 logger.info("vision %s", "on" if self.orch.state.vision_active else "off")
-                if self.session.connected:
-                    instructions, tools = self.orch.initial_config()
-                    await self.session.update_session(instructions=instructions, tools=tools)
 
     # ── downstream: Qwen -> browser (lazy connect + resume) ──────────────────
     async def _downstream(self) -> None:
@@ -302,8 +325,19 @@ class RealtimeBridge:
         elif isinstance(evt, events.SpeechStopped):
             await self._safe_send_json(protocol.state("thinking"))
         elif isinstance(evt, events.ResponseCreated):
-            await self._safe_send_json(protocol.state("speaking"))
+            self._response_idle.clear()
+            if self._expect_response:
+                self._expect_response = False  # this response is ours — let it speak
+                await self._safe_send_json(protocol.state("speaking"))
+            else:
+                # Autonomous response from the realtime model — suppress it; the brain
+                # composes the grounded answer instead.
+                try:
+                    await self.session.cancel_response()
+                except Exception as exc:  # noqa: BLE001
+                    logger.debug("suppress auto-response: %r", exc)
         elif isinstance(evt, events.ResponseDone):
+            self._response_idle.set()
             await self._safe_send_json(protocol.state("listening", self._remaining()))
         elif isinstance(evt, events.SessionUpdated):
             logger.info(
@@ -311,8 +345,8 @@ class RealtimeBridge:
                 bool(evt.session.get("tools")), sorted(evt.session)[:12],
             )
         elif isinstance(evt, events.FunctionCallDone):
-            logger.info("NATIVE function call: %s args=%s", evt.name, evt.arguments)
-            await self._handle_tool_call(evt)
+            # The realtime model has no tools now (the brain owns them); ignore stray calls.
+            logger.info("ignoring native function call (brain owns tools): %s", evt.name)
         elif isinstance(evt, events.RealtimeError):
             if _is_benign_error(evt.message):
                 logger.info("realtime notice (benign): %s", evt.message)  # not shown to user
@@ -325,28 +359,67 @@ class RealtimeBridge:
                 logger.info("unhandled realtime event type: %s", evt.type)
 
     async def _on_user_transcript(self, text: str) -> None:
-        """A finalized user utterance: filter misrecognitions, show it, run the sidecar."""
+        """A finalized user utterance: filter misrecognitions, show it, run the brain."""
         if _mostly_cjk(text):
             logger.info("dropping CJK-misrecognized transcript: %r", text)
             return
         await self._safe_send_json(protocol.transcript("user", text=text, final=True))
         if text.strip():
             self._history.append({"role": "user", "content": text})
-            # Run the sidecar in the background so it never blocks audio playback.
-            task = asyncio.create_task(self._run_sidecar(text))
+            # Handle the turn in the background so it never blocks audio playback.
+            task = asyncio.create_task(self._handle_turn(text))
             self._bg_tasks.add(task)
             task.add_done_callback(self._bg_tasks.discard)
 
-    # ── tool calls ───────────────────────────────────────────────────────────
+    async def _handle_turn(self, text: str) -> None:
+        """The brain composes the answer (running tools through _apply_tool), then we voice
+        it via the realtime model; vision questions are deferred to the realtime model."""
+        if not self.sidecar.enabled or not self.session.connected:
+            return
+        try:
+            reply = await self.sidecar.run(text, self._history[-8:], self.orch.state.vision_active, self._execute_tool)
+        except Exception as exc:  # noqa: BLE001 — never break the turn on a brain hiccup
+            logger.warning("brain error: %r", exc)
+            return
+        logger.info("brain reply: kind=%s len=%d", reply.kind, len(reply.text))
+
+        if reply.kind == "defer_vision":
+            await self._create_our_response()  # realtime model answers from the camera frame
+        elif reply.text:
+            await self.session.inject_message(f"SPEAK: {reply.text}", role="user")
+            await self._create_our_response()
+
+    async def _create_our_response(self) -> None:
+        """Ask the realtime model to speak — flagged so it is NOT suppressed. Waits for any
+        in-flight (suppressed) response to finish so we don't hit 'active response'."""
+        try:
+            await asyncio.wait_for(self._response_idle.wait(), timeout=8.0)
+        except asyncio.TimeoutError:
+            pass
+        self._expect_response = True
+        await self.session.create_response()
+
+    # ── tool execution ────────────────────────────────────────────────────────
+    async def _execute_tool(self, name: str, args: dict) -> dict:
+        """Brain callback: run a tool through the orchestrator (panels/routing/grounding)
+        and return the grounded result the brain composes its answer from."""
+        outcome = await self._apply_tool(name, args)
+        return outcome.model_output if outcome is not None else {"note": "duplicate, already shown"}
+
     async def _apply_tool(self, name: str, args: dict):
-        """Run one tool through the orchestrator and emit its browser effects + a transfer
-        session.update. Shared by the native path and the sidecar. Returns the outcome (or
-        None on dedup). Never raises — a failed tool still yields a spoken-able result."""
+        """Run one tool through the orchestrator and emit its browser effects + routing chip.
+        Returns the outcome (or None on dedup). Never raises."""
         key = f"{name}:{json.dumps(args, sort_keys=True)}"
         if self.dedup.is_duplicate(key, time.monotonic()):
             logger.info("deduped tool call %s", name)
             return None
         await self._safe_send_json(protocol.tool_event(name, status="called", args=args))
+        # Light up the specialist chip that owns this tool.
+        agent = TOOL_AGENT.get(name)
+        if agent:
+            from app.agents.specialists import AGENTS
+
+            await self._safe_send_json(protocol.agent_routing(agent, AGENTS[agent].display))
         t0 = time.monotonic()
         try:
             outcome = self.orch.process_tool_call(name, args)
@@ -355,9 +428,6 @@ class RealtimeBridge:
             from app.agents.orchestrator import ToolOutcome
 
             outcome = ToolOutcome(model_output={"error": "tool_failed", "message": f"{name} failed: {exc}"})
-        if outcome.session_update is not None:  # transfer: swap the active agent
-            instructions, tools = outcome.session_update
-            await self.session.update_session(instructions=instructions, tools=tools)
         for msg in outcome.frontend:
             await self._safe_send_json(msg)
         latency_ms = (time.monotonic() - t0) * 1000
@@ -365,42 +435,6 @@ class RealtimeBridge:
             protocol.metrics(self.orch.metrics.count, self.orch.metrics.last_tool, self.orch.metrics.rejected, latency_ms)
         )
         return outcome
-
-    async def _handle_tool_call(self, call: events.FunctionCallDone) -> None:
-        """Native realtime function call — execute and return the result to the model."""
-        outcome = await self._apply_tool(call.name, call.arguments)
-        if outcome is None:  # duplicate within the dedup window — first result already sent
-            return
-        await self.session.send_function_result(call.call_id, outcome.model_output)
-
-    async def _run_sidecar(self, user_text: str) -> None:
-        """The grounding brain: a reliable text model decides which tools to call; we run
-        them through the SAME handlers (panels + grounded results), then inject the results
-        for the realtime model to speak — so spoken machine data is always catalog-true."""
-        if not self.sidecar.enabled or not self.session.connected:
-            return
-        try:
-            calls = await self.sidecar.decide(user_text, self._history[-8:])
-        except Exception as exc:  # noqa: BLE001 — never break the turn on a sidecar hiccup
-            logger.warning("sidecar error: %r", exc)
-            return
-        if not calls:
-            return
-        grounded: list[dict] = []
-        for name, args in calls:
-            outcome = await self._apply_tool(name, args)
-            if outcome is not None:
-                grounded.append({"tool": name, "result": outcome.model_output})
-        if not grounded:
-            return
-        note = (
-            "GROUNDED RESULTS from the work-order catalog for the technician's last request. "
-            "Answer using ONLY these values; never change any number, part code, or step:\n"
-            + json.dumps(grounded)
-        )
-        logger.info("sidecar grounded %d tool(s): %s", len(grounded), [g["tool"] for g in grounded])
-        await self.session.inject_message(note, role="user")
-        await self.session.create_response()
 
     # ── helpers ──────────────────────────────────────────────────────────────
     def _remaining(self) -> int:
