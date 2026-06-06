@@ -35,7 +35,13 @@ export function TopBar({
           🔧 FORGE
         </span>
         <span className="hidden text-xs text-forge-muted sm:inline">
-          Field Operations Real-time Guidance Engine · {assetId}
+          Field Operations Real-time Guidance Engine
+        </span>
+        <span
+          className="hidden rounded bg-forge-edge px-1.5 py-0.5 text-[10px] text-forge-muted md:inline"
+          title="Asset in front of the technician — full grounded data loaded"
+        >
+          active asset · {assetId}
         </span>
       </div>
 

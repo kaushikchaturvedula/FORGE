@@ -50,12 +50,6 @@ class Settings(BaseSettings):
     # Dump every raw realtime event to the log for protocol debugging.
     debug_events: bool = Field(default=False, alias="FORGE_DEBUG_EVENTS")
 
-    # ── Tool-calling sidecar (the grounding backbone) ────────────────────────
-    # A reliable DashScope chat-completions model does the function calling over the
-    # bundled catalog; the realtime model speaks the grounded result it returns.
-    sidecar_enabled: bool = Field(default=True, alias="FORGE_SIDECAR_ENABLED")
-    sidecar_model: str = Field(default="qwen3.7-plus", alias="FORGE_SIDECAR_MODEL")
-
     # Audio formats (Qwen-Omni-Realtime: input 16 kHz, output 24 kHz PCM16 mono;
     # the wire format value is "pcm").
     input_sample_rate: int = 16000
@@ -88,12 +82,6 @@ class Settings(BaseSettings):
     def realtime_ws_url(self) -> str:
         base = _WS_ENDPOINTS.get(self.region, _WS_ENDPOINTS["intl"])
         return f"{base}?model={self.realtime_model}"
-
-    @property
-    def sidecar_base_url(self) -> str:
-        # DashScope OpenAI-compatible endpoint for the chat-completions tool brain.
-        host = "dashscope-intl" if self.region == "intl" else "dashscope"
-        return f"https://{host}.aliyuncs.com/compatible-mode/v1"
 
     @property
     def dashscope_region(self) -> str:

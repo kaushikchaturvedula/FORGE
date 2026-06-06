@@ -33,9 +33,9 @@ import time
 
 from starlette.websockets import WebSocket, WebSocketDisconnect
 
+from app.agents import intent
 from app.agents.orchestrator import Orchestrator
 from app.agents.session_state import SessionState
-from app.agents.sidecar import make_sidecar
 from app.config import Settings, get_settings
 from app.realtime import events
 from app.realtime.session import QwenRealtimeSession
@@ -56,13 +56,14 @@ def _is_benign_error(message: str) -> bool:
     return any(k in m for k in _BENIGN_ERROR_MARKERS)
 
 
-def _mostly_cjk(text: str) -> bool:
-    """True when a transcript line is mostly CJK — a gummy misrecognition of English."""
+def _mostly_non_latin(text: str) -> bool:
+    """True when a transcript line is mostly non-Latin script (CJK, Arabic, Cyrillic, …) —
+    a gummy mis-transcription of English we drop from the HUD."""
     if not text or not text.strip():
         return False
-    cjk = sum(1 for c in text if "぀" <= c <= "鿿")
+    non_latin = sum(1 for c in text if c.isalpha() and not c.isascii())
     latin = sum(1 for c in text if c.isascii() and c.isalpha())
-    return cjk > 0 and cjk >= max(1, latin)
+    return non_latin > 0 and non_latin >= max(1, latin)
 
 
 # Which specialist "owns" each tool — drives the agent-routing chips in the HUD.
@@ -127,14 +128,6 @@ class RealtimeBridge:
         self._want_session = asyncio.Event()
         self._connect_lock = asyncio.Lock()
         self._seen_event_types: set[str] = set()
-        self.sidecar = make_sidecar(self.settings)  # the brain (may be a no-op)
-        self._history: list[dict[str, str]] = []  # rolling transcript for the brain
-        self._bg_tasks: set[asyncio.Task] = set()  # background turn handlers
-        self._turn_seq = 0  # bumped each user turn; drops stale brain replies
-        # Set when no realtime response is in flight, so a grounded SPEAK can be sequenced
-        # after the realtime model's own (ack/vision/chit-chat) response finishes.
-        self._response_idle = asyncio.Event()
-        self._response_idle.set()
 
     # ── lifecycle ────────────────────────────────────────────────────────────
     async def run(self) -> None:
@@ -157,16 +150,14 @@ class RealtimeBridge:
 
         self._closing = True
         self._want_session.set()  # unblock a parked downstream so it can exit
-        for task in (*pending, *self._bg_tasks):
+        for task in pending:
             task.cancel()
-        await asyncio.gather(*pending, *self._bg_tasks, return_exceptions=True)
+        await asyncio.gather(*pending, return_exceptions=True)
         for task in done:
             exc = task.exception()
             if exc and not isinstance(exc, (WebSocketDisconnect, asyncio.CancelledError)):
                 logger.info("bridge task ended: %r", exc)
         await self.session.close()
-        if hasattr(self.sidecar, "aclose"):
-            await self.sidecar.aclose()
         await self._safe_close()
 
     async def _ensure_session(self) -> bool:
@@ -313,11 +304,9 @@ class RealtimeBridge:
         elif isinstance(evt, events.OutputTranscriptDelta):
             await self._safe_send_json(protocol.transcript("assistant", delta=evt.text))
         elif isinstance(evt, events.OutputTranscriptDone):
-            if evt.text:
-                self._history.append({"role": "assistant", "content": evt.text})
             await self._safe_send_json(protocol.transcript("assistant", text=evt.text, final=True))
         elif isinstance(evt, events.InputTranscriptDelta):
-            pass  # user partials are dropped (avoids flickering CJK misrecognitions)
+            pass  # user partials are dropped (avoids flickering mis-transcriptions)
         elif isinstance(evt, events.InputTranscriptDone):
             await self._on_user_transcript(evt.text)
         elif isinstance(evt, events.SpeechStarted):
@@ -326,19 +315,13 @@ class RealtimeBridge:
         elif isinstance(evt, events.SpeechStopped):
             await self._safe_send_json(protocol.state("thinking"))
         elif isinstance(evt, events.ResponseCreated):
-            self._response_idle.clear()
             await self._safe_send_json(protocol.state("speaking"))
         elif isinstance(evt, events.ResponseDone):
-            self._response_idle.set()
             await self._safe_send_json(protocol.state("listening", self._remaining()))
         elif isinstance(evt, events.SessionUpdated):
-            logger.info(
-                "session.updated echo: tools=%s keys=%s",
-                bool(evt.session.get("tools")), sorted(evt.session)[:12],
-            )
+            logger.info("session.updated echo: keys=%s", sorted(evt.session)[:12])
         elif isinstance(evt, events.FunctionCallDone):
-            # The realtime model has no tools now (the brain owns them); ignore stray calls.
-            logger.info("ignoring native function call (brain owns tools): %s", evt.name)
+            logger.info("ignoring native function call: %s", evt.name)  # model has no tools
         elif isinstance(evt, events.RealtimeError):
             if _is_benign_error(evt.message):
                 logger.info("realtime notice (benign): %s", evt.message)  # not shown to user
@@ -351,60 +334,19 @@ class RealtimeBridge:
                 logger.info("unhandled realtime event type: %s", evt.type)
 
     async def _on_user_transcript(self, text: str) -> None:
-        """A finalized user utterance: filter misrecognitions, show it, run the brain."""
-        if _mostly_cjk(text):
-            logger.info("dropping CJK-misrecognized transcript: %r", text)
+        """A finalized user utterance. The realtime model answers it directly (grounded on
+        the embedded FORGE DATA). We just keep the console in sync: show the transcript and
+        light up the matching panels + routing chip via fast keyword intent."""
+        if _mostly_non_latin(text):
+            logger.info("dropping non-English mis-transcription: %r", text)
             return
         await self._safe_send_json(protocol.transcript("user", text=text, final=True))
-        if text.strip():
-            self._history.append({"role": "user", "content": text})
-            self._turn_seq += 1
-            seq = self._turn_seq
-            # Handle the turn in the background so it never blocks audio playback. The
-            # realtime model ALSO auto-answers (vision/chit-chat directly, a tiny "One
-            # moment" ack for data); the brain then overrides DATA answers with a grounded
-            # SPEAK that the realtime model reads.
-            task = asyncio.create_task(self._handle_turn(text, seq))
-            self._bg_tasks.add(task)
-            task.add_done_callback(self._bg_tasks.discard)
-
-    async def _handle_turn(self, text: str, seq: int) -> None:
-        """The brain runs tools (panels/routing) and composes the grounded DATA answer; we
-        voice it. Non-data turns (vision, chit-chat) it defers — the realtime model already
-        answered those itself."""
-        if not self.sidecar.enabled or not self.session.connected:
+        if not text.strip():
             return
-        try:
-            reply = await self.sidecar.run(text, self._history[-8:], self.orch.state.vision_active, self._execute_tool)
-        except Exception as exc:  # noqa: BLE001 — never break the turn on a brain hiccup
-            logger.warning("brain error: %r", exc)
-            return
-        logger.info("brain reply: kind=%s len=%d", reply.kind, len(reply.text))
-        if reply.kind == "speak" and reply.text:
-            await self._voice(reply.text, seq)
+        for name, args in intent.infer_tools(text):
+            await self._apply_tool(name, args)
 
-    async def _voice(self, text: str, seq: int) -> None:
-        """Have the realtime model read a grounded answer — sequenced after its own ack so
-        we never collide ('Conversation already has an active response'). Dropped if a newer
-        turn has started."""
-        if seq != self._turn_seq:
-            return
-        try:
-            await asyncio.wait_for(self._response_idle.wait(), timeout=8.0)
-        except asyncio.TimeoutError:
-            pass
-        if seq != self._turn_seq or not self.session.connected:
-            return  # a newer turn superseded this one
-        await self.session.inject_message(f"SPEAK: {text}", role="user")
-        await self.session.create_response()
-
-    # ── tool execution ────────────────────────────────────────────────────────
-    async def _execute_tool(self, name: str, args: dict) -> dict:
-        """Brain callback: run a tool through the orchestrator (panels/routing/grounding)
-        and return the grounded result the brain composes its answer from."""
-        outcome = await self._apply_tool(name, args)
-        return outcome.model_output if outcome is not None else {"note": "duplicate, already shown"}
-
+    # ── tool execution (panel + routing-chip updates) ────────────────────────
     async def _apply_tool(self, name: str, args: dict):
         """Run one tool through the orchestrator and emit its browser effects + routing chip.
         Returns the outcome (or None on dedup). Never raises."""

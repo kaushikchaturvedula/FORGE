@@ -141,17 +141,23 @@ class Catalog:
     def resolve_component(
         self, diagram_type: str, target: str
     ) -> tuple[str, dict[str, Any]] | None:
-        """Resolve a navigate target within a diagram (or across all diagrams)."""
+        """Resolve a navigate target within a diagram (or across all diagrams). Tolerant:
+        an alias that appears inside the target also matches, so a whole sentence like
+        "...jump to the drawbar" resolves. Keeps the longest (most specific) match."""
         diag = self.resolve_diagram(diagram_type)
         search_diagrams = [diag[1]] if diag else list(self.diagrams.values())
         norm = _normalize(target)
+        best: tuple[str, dict[str, Any]] | None = None
+        best_len = 0
         for d in search_diagrams:
             for comp in d.get("components", []):
                 phrases = {comp.get("id", ""), comp.get("label", "")}
                 phrases.update(comp.get("aliases", []) or [])
-                if norm in {_normalize(p) for p in phrases}:
-                    return comp.get("id", ""), comp
-        return None
+                for p in phrases:
+                    pn = _normalize(p)
+                    if pn and (pn == norm or pn in norm) and len(pn) > best_len:
+                        best, best_len = (comp.get("id", ""), comp), len(pn)
+        return best
 
     @staticmethod
     def _resolve(
@@ -199,3 +205,61 @@ class Catalog:
 
 # Module-level singleton — loaded once at import.
 catalog = Catalog.load()
+
+
+def catalog_brief(asset_id: str | None = None) -> str:
+    """Render the catalog into a compact, readable FORGE DATA block to embed in the
+    realtime model's instructions, so it answers the asset's data questions instantly and
+    grounded — quoting these exact values. Generated from the bundled files so it never
+    drifts from the panels."""
+    c = catalog
+    aid = asset_id or c.default_asset_id
+    m = c.machine(aid) or {}
+    np = m.get("nameplate", {})
+    specs = m.get("specs", {})
+    sp, ax, tu, co = specs.get("spindle", {}), specs.get("axes", {}), specs.get("turret", {}), specs.get("coolant", {})
+    readings = (c.telemetry_scenario(aid, "nominal") or {}).get("readings", {})
+    th = c.thresholds(aid)
+    out: list[str] = ["=== FORGE DATA — the machine in front of the technician (quote these exact values) ==="]
+    out.append(
+        f"Machine: {np.get('model')} ({np.get('machine_class')}); asset tag {np.get('asset_tag')}; "
+        f"serial {np.get('serial_number')}; {np.get('control')}; year {np.get('year')}; located {np.get('location')}."
+    )
+    out.append(
+        f"Spindle: max speed {sp.get('max_speed_rpm')} rpm, rated {sp.get('rated_speed_rpm')} rpm; "
+        f"max torque {sp.get('max_torque_nm')} Nm, rated {sp.get('rated_torque_nm')} Nm; {sp.get('taper')} taper; "
+        f"{sp.get('drive')}; rated power {sp.get('rated_power_kw')} kW."
+    )
+    out.append(
+        f"Axes travel: X {ax.get('travel_x_mm')} mm, Y {ax.get('travel_y_mm')} mm, Z {ax.get('travel_z_mm')} mm; "
+        f"rapid {ax.get('rapid_traverse_m_min')} m/min; positioning {ax.get('positioning_um')} microns. "
+        f"Turret: {tu.get('stations')} stations, {tu.get('indexing')}, max tool dia {tu.get('max_tool_diameter_mm')} mm. "
+        f"Coolant: {co.get('tank_l')} L tank, {co.get('through_spindle_bar')} bar through-spindle."
+    )
+    if readings:
+        out.append("Current telemetry (nominal run): " + ", ".join(
+            f"{k.replace('_', ' ')} {v.get('value')} {v.get('unit')}" for k, v in readings.items()) + ".")
+    thr = [f"{k.replace('_', ' ')} warn at {th[k].get('warn_above')}, alert at {th[k].get('alert_above')} {th[k].get('unit', '')}"
+           for k in ("spindle_torque", "tool_wear", "process_temperature", "rotational_speed", "overstrain_index") if th.get(k)]
+    if thr:
+        out.append("Failure thresholds (alert raises a spoken+visual alarm): " + "; ".join(thr) + ".")
+    out.append("Parts (name -> part number -> spec):")
+    out += [f"  - {p.get('name')} -> {p.get('part_number')} -> {p.get('spec')}" for p in c.parts.values()]
+    out.append("Torque specs (fastener -> torque -> tightening sequence):")
+    out += [f"  - {f.get('name')} ({f.get('size')}) -> {f.get('torque_nm')} Nm -> {f.get('sequence')}" for f in c.fasteners.values()]
+    out.append("Procedures (walk one step at a time):")
+    out += [f"  - {pr.get('title')}: " + "; ".join(f"{s.get('n')}) {s.get('text')}" for s in pr.get("steps", []))
+            for pr in c.procedures.values()]
+    out.append("Safety checklists (require the technician's spoken confirmation per item):")
+    out += [f"  - {ck.get('title')} — hazard: {ck.get('hazard')}; items: "
+            + "; ".join(f"{i.get('n')}) {i.get('text')}" for i in ck.get("items", []))
+            for ck in c.safety.values()]
+    if m.get("maintenance_history"):
+        out.append("Recent maintenance: " + " | ".join(
+            f"{e.get('date')} {e.get('event')} ({e.get('notes')})" for e in m["maintenance_history"]))
+    if m.get("open_faults"):
+        out.append("Open faults: " + " | ".join(
+            f"{x.get('fault_id')}: {x.get('symptom')} (suspected {x.get('suspected')}, {x.get('severity')})" for x in m["open_faults"]))
+    out.append("Schematics you can pull up (diagram -> components to point to): " + "; ".join(
+        f"{d.get('title')}: " + ", ".join(comp.get("label", "") for comp in d.get("components", [])) for d in c.diagrams.values()))
+    return "\n".join(out)
