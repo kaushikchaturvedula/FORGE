@@ -30,7 +30,7 @@ class FakeSession:
         pass
 
     async def append_audio(self, pcm):
-        pass
+        self.audio_appends = getattr(self, "audio_appends", 0) + 1
 
     async def append_image(self, jpeg):
         self.images += 1
@@ -102,6 +102,7 @@ def bridge():
     b._asset_label = b.orch.state.asset_id
     b._response_active = False
     b._pending_response = False
+    b._last_response_done_at = 0.0
     return b
 
 
@@ -308,6 +309,41 @@ def test_log_completion_detector():
     assert _is_log_completion("for the log, I finished the inspection")
     assert not _is_log_completion("walk me through the tool change")
     assert not _is_log_completion("start the pre-start procedure")
+
+
+# ── phantom turns + self-interruption (voice stability) ─────────────────────
+def test_is_real_speech():
+    from app.ws.gateway import _is_real_speech
+
+    assert not _is_real_speech("") and not _is_real_speech("   ")
+    assert not _is_real_speech(".") and not _is_real_speech("...") and not _is_real_speech("?!")
+    assert not _is_real_speech("是")
+    assert _is_real_speech("yes") and _is_real_speech("what is the tool wear")
+
+
+async def test_empty_turn_dropped_and_phantom_response_cancelled(bridge):
+    await bridge._on_user_transcript("")
+    assert not any(m["type"] == "transcript" for m in bridge.ws.json_sent)  # no empty TECH bubble
+    assert bridge.session.cancelled == 1  # the auto-created phantom response is cancelled
+    await bridge._on_user_transcript("...")  # punctuation/noise -> also dropped
+    assert bridge.session.cancelled == 2
+
+
+async def test_real_turn_is_processed(bridge):
+    await bridge._on_user_transcript("what's the tool wear")
+    assert any(m["type"] == "transcript" and m["role"] == "user" for m in bridge.ws.json_sent)
+    assert bridge.session.cancelled == 0
+
+
+async def test_mic_gated_while_forge_speaking(bridge):
+    bridge.session.audio_appends = 0
+    bridge._response_active = True  # FORGE is speaking
+    await bridge._send_audio(b"\x01\x02" * 100)
+    assert bridge.session.audio_appends == 0  # mic dropped (anti-echo)
+    bridge._response_active = False
+    bridge._last_response_done_at = 0.0  # cooldown long past
+    await bridge._send_audio(b"\x01\x02" * 100)
+    assert bridge.session.audio_appends == 1  # mic forwarded when FORGE is silent
 
 
 def test_tool_agent_map_is_valid():

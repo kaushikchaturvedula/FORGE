@@ -46,6 +46,9 @@ logger = logging.getLogger("forge.gateway")
 AUDIO_FLUSH_BYTES = 3200  # ~100 ms of 16 kHz mono PCM16
 DEDUP_WINDOW_S = 4.0
 MAX_CONNECT_FAILURES = 5
+# Anti-echo: don't feed the mic to the model while FORGE is speaking, plus this cooldown
+# after it stops, so its own audio (echoing off speakers) can't be heard as a user turn.
+FORGE_SPEECH_COOLDOWN_S = 0.6
 
 # Realtime warnings that are non-fatal noise — logged, never shown as a red banner.
 # The idle/response timeouts just mean "nobody spoke for a while"; the downstream loop
@@ -77,6 +80,16 @@ def _is_log_completion(text: str) -> bool:
     """True when the utterance is logging a completed task (NOT asking to start a procedure)."""
     t = (text or "").lower()
     return any(m in t for m in _LOG_MARKERS) and not any(v in t for v in _PROC_START_VERBS)
+
+
+def _is_real_speech(text: str) -> bool:
+    """A committed turn worth responding to — not silence, echo, noise, or a mis-transcription.
+    Empty/whitespace/single-char/non-Latin/no-word-character turns are dropped so FORGE never
+    answers a phantom turn the VAD committed when nobody actually spoke."""
+    t = (text or "").strip()
+    if len(t) < 2 or _mostly_non_latin(t):
+        return False
+    return any(c.isascii() and c.isalpha() for c in t)
 
 
 def _mostly_non_latin(text: str) -> bool:
@@ -206,6 +219,7 @@ class RealtimeBridge:
         self._asset_label = self.orch.state.asset_id  # header indicator (dims on machine switch)
         self._response_active = False  # a model response is currently streaming
         self._pending_response = False  # create a follow-up response once the current one ends
+        self._last_response_done_at = 0.0  # when FORGE last stopped speaking (anti-echo cooldown)
         self._last_user_text = ""  # most recent user utterance (guards unrequested procedure starts)
 
     # ── lifecycle ────────────────────────────────────────────────────────────
@@ -302,6 +316,15 @@ class RealtimeBridge:
         self._last_audio_at = time.monotonic()
         self._want_session.set()
         if not await self._ensure_session():
+            return
+        # FIX (anti-echo / self-interruption): while FORGE is speaking — or just stopped — do
+        # NOT forward the mic. Its own audio echoes off the speakers into the mic and the
+        # server VAD would commit it as a phantom user turn, making FORGE answer (and cut off)
+        # itself. The mic re-opens the moment FORGE finishes (plus a short cooldown). NOTE:
+        # this disables voice barge-in DURING FORGE's speech (the Stop button still interrupts).
+        if self._response_active or self._pending_response or (
+            time.monotonic() - self._last_response_done_at < FORGE_SPEECH_COOLDOWN_S
+        ):
             return
         try:
             await self.session.append_audio(pcm)
@@ -419,6 +442,7 @@ class RealtimeBridge:
             await self._safe_send_json(protocol.state("speaking"))
         elif isinstance(evt, events.ResponseDone):
             self._response_active = False
+            self._last_response_done_at = time.monotonic()  # start the anti-echo cooldown
             await self._safe_send_json(protocol.state("listening", self._remaining()))
             if self._pending_response:  # the function-call response ended — now speak the result
                 self._pending_response = False
@@ -462,14 +486,18 @@ class RealtimeBridge:
 
     async def _on_user_transcript(self, text: str) -> None:
         """A finalized user utterance. The realtime model answers it directly (grounded on
-        the embedded FORGE DATA). We just keep the console in sync: show the transcript and
-        light up the matching panels + routing chip via fast keyword intent."""
-        if _mostly_non_latin(text):
-            logger.info("dropping non-English mis-transcription: %r", text)
+        the embedded FORGE DATA). We keep the console in sync via keyword intent — but FIRST
+        guard against phantom turns: if the committed turn isn't real speech (empty, silence,
+        echo, noise, mis-transcription), DROP it and cancel the response the server VAD
+        auto-created for it, so FORGE never answers a turn that never happened."""
+        if not _is_real_speech(text):
+            logger.info("dropping empty/non-speech turn: %r", text)
+            try:
+                await self.session.cancel_response()  # kill the phantom-turn response
+            except Exception as exc:  # noqa: BLE001 — benign if nothing's active
+                logger.debug("cancel phantom response: %r", exc)
             return
         await self._safe_send_json(protocol.transcript("user", text=text, final=True))
-        if not text.strip():
-            return
         self._last_user_text = text
         self._last_highlight = None  # re-arm auto-highlight for this new turn
         for name, args in intent.infer_tools(text, self._intent_ctx):

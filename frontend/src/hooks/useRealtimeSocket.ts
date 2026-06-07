@@ -191,6 +191,7 @@ export function useRealtimeSocket(config: RuntimeConfig | null) {
   const frameProvider = useRef<FrameProvider | null>(null);
   const screenProvider = useRef<FrameProvider | null>(null);
   const micOn = useRef(false);
+  const micGateUntil = useRef(0); // anti-echo: gate the mic while FORGE is playing (+cooldown)
 
   const send = useCallback((obj: unknown) => {
     if (ws.current?.readyState === WebSocket.OPEN) ws.current.send(JSON.stringify(obj));
@@ -256,6 +257,12 @@ export function useRealtimeSocket(config: RuntimeConfig | null) {
       const rec = new MicRecorder();
       let frames = 0;
       await rec.start(config.input_sample_rate, (pcm) => {
+        // Anti-echo: never send the mic while FORGE is actually playing audio (it echoes off
+        // the speakers into the mic and the VAD would commit it as a phantom user turn), nor
+        // for a short cooldown after the speaker tail. Re-opens the instant playback stops.
+        const now = performance.now();
+        if (player.current?.speaking) micGateUntil.current = now + 500;
+        if (now < micGateUntil.current) return;
         if (ws.current?.readyState === WebSocket.OPEN) {
           ws.current.send(pcm);
           if (frames++ === 0) console.info("[FORGE] mic capturing →", rec.mode);
