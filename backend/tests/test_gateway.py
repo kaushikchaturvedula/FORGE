@@ -102,7 +102,9 @@ def bridge():
     b._asset_label = b.orch.state.asset_id
     b._response_active = False
     b._pending_response = False
-    b._last_response_done_at = 0.0
+    b._forge_recent_text = ""
+    b._spoke_over_forge = False
+    b._forge_text_at_barge = ""
     return b
 
 
@@ -335,15 +337,59 @@ async def test_real_turn_is_processed(bridge):
     assert bridge.session.cancelled == 0
 
 
-async def test_mic_gated_while_forge_speaking(bridge):
+async def test_real_barge_in_is_processed(bridge):
+    # User speaks over FORGE with DIFFERENT words -> a real barge-in, must go through.
+    bridge._spoke_over_forge = True
+    bridge._forge_text_at_barge = "the work envelope is clear and the door is closed"
+    await bridge._on_user_transcript("stop, what's the torque on the drawbar")
+    assert any(m["type"] == "transcript" and m["role"] == "user" for m in bridge.ws.json_sent)
+    assert bridge.session.cancelled == 0
+
+
+async def test_forge_echo_is_dropped(bridge):
+    # A turn that echoes FORGE's own words during its speech is dropped (speakers only).
+    bridge._spoke_over_forge = True
+    bridge._forge_text_at_barge = "the work envelope is clear and the door is closed"
+    await bridge._on_user_transcript("the work envelope is clear")
+    assert not any(m["type"] == "transcript" for m in bridge.ws.json_sent)
+    assert bridge.session.cancelled == 1
+
+
+async def test_mic_streams_continuously_for_barge_in(bridge):
+    # No mic gating anymore — audio always forwarded so the user can interrupt.
     bridge.session.audio_appends = 0
-    bridge._response_active = True  # FORGE is speaking
+    bridge._response_active = True
     await bridge._send_audio(b"\x01\x02" * 100)
-    assert bridge.session.audio_appends == 0  # mic dropped (anti-echo)
-    bridge._response_active = False
-    bridge._last_response_done_at = 0.0  # cooldown long past
-    await bridge._send_audio(b"\x01\x02" * 100)
-    assert bridge.session.audio_appends == 1  # mic forwarded when FORGE is silent
+    assert bridge.session.audio_appends == 1
+
+
+# ── panel name resolution + no over-clearing (BUG 2/3) ──────────────────────
+def test_resolve_panel_natural_names():
+    from app.grounding.whitelists import resolve_panel
+
+    assert resolve_panel("machine map") == "overview"
+    assert resolve_panel("hide the machine map please") == "overview"
+    assert resolve_panel("checklist") == "procedure"
+    assert resolve_panel("the screen") == "all"
+    assert resolve_panel("machine data") == "machine_data"
+    assert resolve_panel("the flux capacitor") is None
+
+
+async def test_hide_machine_map_hides_only_overview(bridge):
+    # show the overview, then "hide the machine map" -> hides exactly overview, not all.
+    await bridge._apply_tool("show_panel", {"panel": "overview"})
+    bridge.ws.json_sent.clear()
+    out = await bridge._apply_tool("hide_panel", {"panel": "machine map"})
+    assert out.model_output.get("hidden") == "overview"
+    assert "overview" not in bridge.orch.state.visible_panels
+    # other panels untouched, and no clear-all control emitted
+    assert not any(m.get("panel") == "all" for m in bridge.ws.json_sent if m["type"] == "control")
+
+
+async def test_hide_panel_not_shown_reports_from_uistate(bridge):
+    # nothing shown -> "hide the machine map" must say it's not shown (not pretend / not clear)
+    out = await bridge._apply_tool("hide_panel", {"panel": "machine map"})
+    assert out.model_output.get("ok") is False and out.model_output.get("not_shown") == "overview"
 
 
 def test_tool_agent_map_is_valid():

@@ -21,6 +21,7 @@ from typing import Any, Callable
 
 from app.agents.session_state import SessionState
 from app.data.catalog import catalog
+from app.grounding.whitelists import resolve_panel
 
 
 @dataclass
@@ -370,7 +371,7 @@ def prepare_handoff(state: SessionState, args: dict) -> ToolResult:
 
 # ── panels / vision ──────────────────────────────────────────────────────────
 def show_panel(state: SessionState, args: dict) -> ToolResult:
-    panel = str(args.get("panel", "")).lower()
+    panel = resolve_panel(args.get("panel", "")) or str(args.get("panel", "")).lower()
     if panel == "all":
         state.visible_panels = {"schematic", "machine_data", "procedure", "vision", "measurement", "event_log"}
     else:
@@ -379,16 +380,22 @@ def show_panel(state: SessionState, args: dict) -> ToolResult:
 
 
 def hide_panel(state: SessionState, args: dict) -> ToolResult:
-    panel = str(args.get("panel", "")).lower()
+    """A SPECIFIC named target hides ONLY that panel — only 'all'/'everything' clears the
+    screen. Answers from real UIState: if the target isn't shown, say so (don't pretend)."""
+    panel = resolve_panel(args.get("panel", "")) or str(args.get("panel", "")).lower()
     if panel == "all":
         state.visible_panels.clear()
         state.active_schematic = state.schematic_focus = state.active_highlight = None
-    else:
-        state.visible_panels.discard(panel)
-        if panel == "schematic":
-            state.active_schematic = state.schematic_focus = None
-        elif panel == "overview":
-            state.active_highlight = None
+        return ToolResult(output={"hidden": "all"}, control={"action": "hide_panel", "panel": "all"})
+    if panel not in state.visible_panels:
+        return ToolResult(output={"ok": False, "not_shown": panel,
+                                  "visible": sorted(state.visible_panels),
+                                  "message": f"The {panel} panel isn't on the screen right now."})
+    state.visible_panels.discard(panel)
+    if panel == "schematic":
+        state.active_schematic = state.schematic_focus = None
+    elif panel == "overview":
+        state.active_highlight = None
     return ToolResult(output={"hidden": panel}, control={"action": "hide_panel", "panel": panel})
 
 

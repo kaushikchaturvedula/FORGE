@@ -46,9 +46,6 @@ logger = logging.getLogger("forge.gateway")
 AUDIO_FLUSH_BYTES = 3200  # ~100 ms of 16 kHz mono PCM16
 DEDUP_WINDOW_S = 4.0
 MAX_CONNECT_FAILURES = 5
-# Anti-echo: don't feed the mic to the model while FORGE is speaking, plus this cooldown
-# after it stops, so its own audio (echoing off speakers) can't be heard as a user turn.
-FORGE_SPEECH_COOLDOWN_S = 0.6
 
 # Realtime warnings that are non-fatal noise — logged, never shown as a red banner.
 # The idle/response timeouts just mean "nobody spoke for a while"; the downstream loop
@@ -80,6 +77,10 @@ def _is_log_completion(text: str) -> bool:
     """True when the utterance is logging a completed task (NOT asking to start a procedure)."""
     t = (text or "").lower()
     return any(m in t for m in _LOG_MARKERS) and not any(v in t for v in _PROC_START_VERBS)
+
+
+def _norm_text(s: str) -> str:
+    return " ".join((s or "").lower().split())
 
 
 def _is_real_speech(text: str) -> bool:
@@ -219,7 +220,9 @@ class RealtimeBridge:
         self._asset_label = self.orch.state.asset_id  # header indicator (dims on machine switch)
         self._response_active = False  # a model response is currently streaming
         self._pending_response = False  # create a follow-up response once the current one ends
-        self._last_response_done_at = 0.0  # when FORGE last stopped speaking (anti-echo cooldown)
+        self._forge_recent_text = ""  # FORGE's current/last spoken text (to detect echo)
+        self._spoke_over_forge = False  # the in-progress user turn began while FORGE was speaking
+        self._forge_text_at_barge = ""  # FORGE's text when that user turn started
         self._last_user_text = ""  # most recent user utterance (guards unrequested procedure starts)
 
     # ── lifecycle ────────────────────────────────────────────────────────────
@@ -312,19 +315,12 @@ class RealtimeBridge:
             raise
 
     async def _send_audio(self, pcm: bytes) -> None:
-        # Talking is what triggers (and keeps) the session — connect lazily here.
+        # Stream the mic continuously so the user can BARGE IN over FORGE (server VAD then
+        # cancels the active response). Echo is handled by browser AEC + the empty-turn /
+        # FORGE-word echo guards in _on_user_transcript — we do NOT mute the user here.
         self._last_audio_at = time.monotonic()
         self._want_session.set()
         if not await self._ensure_session():
-            return
-        # FIX (anti-echo / self-interruption): while FORGE is speaking — or just stopped — do
-        # NOT forward the mic. Its own audio echoes off the speakers into the mic and the
-        # server VAD would commit it as a phantom user turn, making FORGE answer (and cut off)
-        # itself. The mic re-opens the moment FORGE finishes (plus a short cooldown). NOTE:
-        # this disables voice barge-in DURING FORGE's speech (the Stop button still interrupts).
-        if self._response_active or self._pending_response or (
-            time.monotonic() - self._last_response_done_at < FORGE_SPEECH_COOLDOWN_S
-        ):
             return
         try:
             await self.session.append_audio(pcm)
@@ -419,8 +415,10 @@ class RealtimeBridge:
             if evt.audio:
                 await self._safe_send_bytes(evt.audio)
         elif isinstance(evt, events.OutputTranscriptDelta):
+            self._forge_recent_text += evt.text  # track FORGE's words to detect echo
             await self._safe_send_json(protocol.transcript("assistant", delta=evt.text))
         elif isinstance(evt, events.OutputTranscriptDone):
+            self._forge_recent_text = evt.text
             await self._safe_send_json(protocol.transcript("assistant", text=evt.text, final=True))
             # NOTE: no auto-highlight from FORGE's own speech — highlighting fires ONLY on an
             # explicit user request (intent / native highlight_component), never spontaneously.
@@ -430,6 +428,9 @@ class RealtimeBridge:
             await self._on_user_transcript(evt.text)
         elif isinstance(evt, events.SpeechStarted):
             self.session.set_speaking(True)  # open the image-append window (uncommitted audio)
+            # Remember if this user turn began while FORGE was speaking (for the echo check).
+            self._spoke_over_forge = self._response_active
+            self._forge_text_at_barge = self._forge_recent_text if self._response_active else ""
             await self._safe_send_json(protocol.interrupted())  # barge-in: drain playback
             await self._safe_send_json(protocol.state("listening"))
         elif isinstance(evt, events.SpeechStopped):
@@ -439,10 +440,10 @@ class RealtimeBridge:
             self.session.mark_buffer_committed()  # input buffer emptied — no images until new speech
         elif isinstance(evt, events.ResponseCreated):
             self._response_active = True
+            self._forge_recent_text = ""  # new response — reset the echo-tracking buffer
             await self._safe_send_json(protocol.state("speaking"))
         elif isinstance(evt, events.ResponseDone):
             self._response_active = False
-            self._last_response_done_at = time.monotonic()  # start the anti-echo cooldown
             await self._safe_send_json(protocol.state("listening", self._remaining()))
             if self._pending_response:  # the function-call response ended — now speak the result
                 self._pending_response = False
@@ -496,6 +497,19 @@ class RealtimeBridge:
                 await self.session.cancel_response()  # kill the phantom-turn response
             except Exception as exc:  # noqa: BLE001 — benign if nothing's active
                 logger.debug("cancel phantom response: %r", exc)
+            return
+        # Echo guard (speakers only): a turn that BEGAN while FORGE was speaking and is a long
+        # substring of FORGE's own words is its audio echoing back — not a real barge-in. Drop
+        # it. A genuine barge-in has different words (or is short), so it passes through and
+        # interrupts normally. On headphones this never triggers.
+        spoke_over = self._spoke_over_forge
+        self._spoke_over_forge = False
+        if spoke_over and len(text.strip()) >= 12 and _norm_text(text) in _norm_text(self._forge_text_at_barge):
+            logger.info("dropping FORGE-echo turn: %r", text)
+            try:
+                await self.session.cancel_response()
+            except Exception:  # noqa: BLE001
+                pass
             return
         await self._safe_send_json(protocol.transcript("user", text=text, final=True))
         self._last_user_text = text

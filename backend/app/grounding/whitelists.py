@@ -38,6 +38,37 @@ PANELS = {
 }
 ROTATE_AXES = {"x", "y", "z"}
 
+# Natural names the tech uses → canonical panel id. The "machine map" is the overview.
+PANEL_ALIASES = {
+    "machine map": "overview", "map": "overview", "overview": "overview",
+    "machine overview": "overview", "component map": "overview", "parts map": "overview",
+    "schematic": "schematic", "schematic view": "schematic", "diagram": "schematic",
+    "blueprint": "schematic", "cross section": "schematic",
+    "machine data": "machine_data", "data": "machine_data", "data panel": "machine_data",
+    "specs": "machine_data", "nameplate": "machine_data", "readouts": "machine_data",
+    "3d model": "model", "three d model": "model", "model": "model", "3-d model": "model",
+    "checklist": "procedure", "procedure": "procedure", "safety check": "procedure", "steps": "procedure",
+    "measurements": "measurement", "measurement": "measurement", "readings panel": "measurement",
+    "work order": "event_log", "work log": "event_log", "log": "event_log", "event log": "event_log",
+    "video": "vision", "camera": "vision", "camera feed": "vision", "feed": "vision", "vision": "vision",
+    "everything": "all", "all": "all", "all panels": "all", "the screen": "all", "screen": "all",
+}
+
+
+def resolve_panel(name: str) -> str | None:
+    """Map a spoken panel name ('machine map', 'the screen', 'checklist') to a canonical id."""
+    n = str(name or "").lower().strip()
+    if n in PANELS:
+        return n
+    if n in PANEL_ALIASES:
+        return PANEL_ALIASES[n]
+    # longest alias contained in the phrase (so "hide the machine map please" still resolves)
+    best, best_len = None, 0
+    for alias, pid in PANEL_ALIASES.items():
+        if alias in n and len(alias) > best_len:
+            best, best_len = pid, len(alias)
+    return best
+
 
 @dataclass(frozen=True)
 class ValidationResult:
@@ -138,9 +169,11 @@ def validate(tool_name: str, args: dict) -> ValidationResult:
         return _OK
 
     if tool_name in ("show_panel", "hide_panel"):
-        panel = str(args.get("panel", "")).lower()
-        if panel not in PANELS:
-            return _reject(f"I don't have a {panel!r} panel.")
+        if resolve_panel(args.get("panel", "")) is None:
+            return _reject(
+                f"I'm not sure which panel {args.get('panel')!r} is — ask which one (machine "
+                f"data, schematic, machine map, 3D model, checklist, measurements, work log)."
+            )
         return _OK
 
     if tool_name in ("rotate_model", "set_rotation"):
