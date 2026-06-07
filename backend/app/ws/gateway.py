@@ -565,6 +565,12 @@ class RealtimeBridge:
 
             outcome = ToolOutcome(model_output={"error": "tool_failed", "message": f"{name} failed: {exc}"})
         self._outcome_cache[key] = outcome
+        if name == "hide_panel" and outcome.model_output.get("not_shown"):
+            # Decisive diagnostic: was the target genuinely absent (tracking gap) or did the
+            # model just deny a panel that IS up (confabulation)?
+            logger.info("hide_panel not_shown: %r -> %r; visible=%s",
+                        args.get("panel"), outcome.model_output.get("not_shown"),
+                        sorted(self.orch.state.visible_panels))
         for msg in outcome.frontend:
             await self._safe_send_json(msg)
         latency_ms = (time.monotonic() - t0) * 1000

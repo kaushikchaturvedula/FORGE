@@ -437,6 +437,7 @@ def set_rotation(state: SessionState, args: dict) -> ToolResult:
 
 def reset_view(state: SessionState, args: dict) -> ToolResult:
     """Restore the 3D model's default camera + orientation."""
+    state.visible_panels.add("model")  # reset_view renders the model panel — track it (like rotate/set)
     state.model_rotation = {"x": 0, "y": 0, "z": 0}
     return ToolResult(output={"view": "reset"}, control={"action": "reset_view"})
 

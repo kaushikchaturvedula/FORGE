@@ -392,6 +392,22 @@ async def test_hide_panel_not_shown_reports_from_uistate(bridge):
     assert out.model_output.get("ok") is False and out.model_output.get("not_shown") == "overview"
 
 
+def test_reset_view_tracks_model_panel():
+    # reset_view renders the 3D model on the frontend, so it must be tracked like rotate/set —
+    # otherwise hide_panel('3D model') falsely says "nothing to hide".
+    from app.grounding.callbacks import execute_tool
+    from app.agents.session_state import SessionState
+
+    s = SessionState()
+    execute_tool(s, "reset_view", {})
+    assert "model" in s.visible_panels
+    r = execute_tool(s, "hide_panel", {"panel": "3D model"})
+    assert r.output.get("hidden") == "model" and "model" not in s.visible_panels
+    # genuinely not shown -> honest not_shown
+    r2 = execute_tool(SessionState(), "hide_panel", {"panel": "3D model"})
+    assert r2.output.get("not_shown") == "model"
+
+
 def test_execute_tool_syncs_visible_panels():
     # ISSUE 3: panels that set panel= but don't self-add (safety checklist, machine data, ...)
     # must still be tracked in visible_panels so hide_panel / SCREEN STATE are truthful.
