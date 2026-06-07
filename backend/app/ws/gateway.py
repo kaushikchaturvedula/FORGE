@@ -220,6 +220,8 @@ class RealtimeBridge:
         self._asset_label = self.orch.state.asset_id  # header indicator (dims on machine switch)
         self._response_active = False  # a model response is currently streaming
         self._pending_response = False  # create a follow-up response once the current one ends
+        self._last_audio_delta_at = 0.0  # diagnostics: when the last audio chunk arrived
+        self._text_done = False  # diagnostics: has the response's text finished?
         self._forge_recent_text = ""  # FORGE's current/last spoken text (to detect echo)
         self._spoke_over_forge = False  # the in-progress user turn began while FORGE was speaking
         self._forge_text_at_barge = ""  # FORGE's text when that user turn started
@@ -413,11 +415,13 @@ class RealtimeBridge:
     async def _handle_server_event(self, evt: events.ServerEvent) -> None:
         if isinstance(evt, events.AudioDelta):
             if evt.audio:
+                self._last_audio_delta_at = time.monotonic()  # diagnostics
                 await self._safe_send_bytes(evt.audio)
         elif isinstance(evt, events.OutputTranscriptDelta):
             self._forge_recent_text += evt.text  # track FORGE's words to detect echo
             await self._safe_send_json(protocol.transcript("assistant", delta=evt.text))
         elif isinstance(evt, events.OutputTranscriptDone):
+            self._text_done = True  # diagnostics: text finished
             self._forge_recent_text = evt.text
             await self._safe_send_json(protocol.transcript("assistant", text=evt.text, final=True))
             # NOTE: no auto-highlight from FORGE's own speech — highlighting fires ONLY on an
@@ -427,6 +431,7 @@ class RealtimeBridge:
         elif isinstance(evt, events.InputTranscriptDone):
             await self._on_user_transcript(evt.text)
         elif isinstance(evt, events.SpeechStarted):
+            logger.info("VAD speech_started (forge_speaking=%s)", self._response_active)  # cutoff diagnostics
             self.session.set_speaking(True)  # open the image-append window (uncommitted audio)
             # Remember if this user turn began while FORGE was speaking (for the echo check).
             self._spoke_over_forge = self._response_active
@@ -440,8 +445,14 @@ class RealtimeBridge:
             self.session.mark_buffer_committed()  # input buffer emptied — no images until new speech
         elif isinstance(evt, events.ResponseCreated):
             self._response_active = True
+            self._text_done = False  # diagnostics: new response, text not done yet
             self._forge_recent_text = ""  # new response — reset the echo-tracking buffer
             await self._safe_send_json(protocol.state("speaking"))
+        elif isinstance(evt, events.ResponseAudioDone):
+            # Cutoff diagnostics: if audio ends while text is NOT done, the model truncated its
+            # own audio (a weak-model behavior, not our bug).
+            logger.info("audio.done (text_done=%s, since_last_delta=%.2fs)",
+                        self._text_done, time.monotonic() - self._last_audio_delta_at)
         elif isinstance(evt, events.ResponseDone):
             self._response_active = False
             await self._safe_send_json(protocol.state("listening", self._remaining()))
@@ -492,7 +503,7 @@ class RealtimeBridge:
         echo, noise, mis-transcription), DROP it and cancel the response the server VAD
         auto-created for it, so FORGE never answers a turn that never happened."""
         if not _is_real_speech(text):
-            logger.info("dropping empty/non-speech turn: %r", text)
+            logger.info("dropping empty/non-speech turn: %r (forge_speaking=%s)", text, self._response_active)
             try:
                 await self.session.cancel_response()  # kill the phantom-turn response
             except Exception as exc:  # noqa: BLE001 — benign if nothing's active

@@ -57,6 +57,10 @@ def test_parse_input_audio_committed():
     )
 
 
+def test_parse_response_audio_done():
+    assert isinstance(ev.parse_server_event({"type": "response.audio.done"}), ev.ResponseAudioDone)
+
+
 def test_parse_error_and_unknown():
     err = ev.parse_server_event({"type": "error", "error": {"message": "boom", "code": "x"}})
     assert isinstance(err, ev.RealtimeError) and err.message == "boom"

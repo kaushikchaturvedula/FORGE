@@ -72,5 +72,12 @@ def execute_tool(
         logger.exception("tool %s failed", name)
         result = ToolResult(output={"error": "tool_failed", "message": f"Something went wrong running {name}."})
 
+    # Keep UIState in sync: any tool that returns a panel reveals it on the frontend, so the
+    # backend must record it as visible too. Without this, hide_panel / SCREEN STATE are blind
+    # to machine_data / procedure / measurement / event_log (which set panel= but didn't add
+    # themselves), making FORGE falsely say "nothing to hide" for a panel that's on screen.
+    if result.panel and result.panel.get("panel"):
+        state.visible_panels.add(result.panel["panel"])
+
     after_tool(metrics, name, result)
     return result

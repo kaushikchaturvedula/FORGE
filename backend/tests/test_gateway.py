@@ -392,6 +392,25 @@ async def test_hide_panel_not_shown_reports_from_uistate(bridge):
     assert out.model_output.get("ok") is False and out.model_output.get("not_shown") == "overview"
 
 
+def test_execute_tool_syncs_visible_panels():
+    # ISSUE 3: panels that set panel= but don't self-add (safety checklist, machine data, ...)
+    # must still be tracked in visible_panels so hide_panel / SCREEN STATE are truthful.
+    from app.grounding.callbacks import execute_tool
+    from app.agents.session_state import SessionState
+
+    s = SessionState()
+    execute_tool(s, "run_safety_check", {"check_type": "loto", "action": "start"})
+    assert "procedure" in s.visible_panels  # the checklist IS now tracked
+    execute_tool(s, "show_machine_data", {"data_type": "nameplate"})
+    assert "machine_data" in s.visible_panels
+    # "hide the checklist" resolves to procedure, which IS shown -> hides it (no false "not shown")
+    r = execute_tool(s, "hide_panel", {"panel": "checklist"})
+    assert r.output.get("hidden") == "procedure" and "procedure" not in s.visible_panels
+    # genuinely absent -> honest not_shown
+    r2 = execute_tool(SessionState(), "hide_panel", {"panel": "machine map"})
+    assert r2.output.get("not_shown") == "overview"
+
+
 def test_tool_agent_map_is_valid():
     from app.agents.tools import schemas
     from app.agents.specialists import AGENTS

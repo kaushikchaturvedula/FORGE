@@ -105,6 +105,11 @@ class ResponseDone:
 
 
 @dataclass
+class ResponseAudioDone:
+    """The model finished emitting AUDIO for a response (may precede the text done)."""
+
+
+@dataclass
 class RealtimeError:
     message: str
     code: str | None = None
@@ -131,6 +136,7 @@ ServerEvent = (
     | FunctionCallDone
     | ResponseCreated
     | ResponseDone
+    | ResponseAudioDone
     | RealtimeError
     | UnknownEvent
 )
@@ -195,6 +201,8 @@ def parse_server_event(raw: dict[str, Any]) -> ServerEvent:
         return ResponseCreated(response_id=(raw.get("response") or {}).get("id"))
     if etype == "response.done":
         return ResponseDone(response_id=(raw.get("response") or {}).get("id"))
+    if etype in ("response.audio.done", "response.output_audio.done"):
+        return ResponseAudioDone()
 
     if etype == "error":
         err = raw.get("error", raw)
