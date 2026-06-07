@@ -249,7 +249,7 @@ def test_procedure_step_auto_logs_each_step():
     assert any(e["type"] == "procedure_step" for e in s.work_log)
 
 
-async def test_append_image_gated_on_buffer_audio():
+async def test_append_image_gated_on_vad_not_continuous_mic():
     from app.realtime.session import QwenRealtimeSession
 
     sess = QwenRealtimeSession.__new__(QwenRealtimeSession)
@@ -259,12 +259,55 @@ async def test_append_image_gated_on_buffer_audio():
         sent.append(e)
 
     sess._send = fake_send  # type: ignore[method-assign]
+    sess._audio_sent = False
     sess._buffer_has_audio = False
+    sess._last_audio_at = 0.0
+    # The mic streams continuously — append_audio must NOT open the image window.
+    await sess.append_audio(b"\x00\x01\x00\x01")
+    assert sess._buffer_has_audio is False
     await sess.append_image(b"\xff\xd8\xff")
-    assert sent == []  # no uncommitted audio -> skip (no 'append image before append audio' spam)
-    sess._buffer_has_audio = True
+    assert not any(e.get("type") == "input_image_buffer.append" for e in sent)  # skipped
+    # Only the server-VAD speaking window opens it.
+    sess.set_speaking(True)
     await sess.append_image(b"\xff\xd8\xff")
-    assert len(sent) == 1
+    assert any(e.get("type") == "input_image_buffer.append" for e in sent)
+    sess.mark_buffer_committed()
+    assert sess._buffer_has_audio is False
+
+
+async def test_dismiss_alert_emits_control(bridge):
+    await bridge._apply_tool("dismiss_alert", {})
+    assert any(m["type"] == "control" and m.get("action") == "dismiss_alert" for m in bridge.ws.json_sent)
+
+
+async def test_record_measurement_accepts_spaced_type(bridge):
+    # "spindle torque" (space) must normalize and succeed on the first call
+    out = await bridge._apply_tool("record_measurement", {"type": "spindle torque", "value": 65, "unit": "Nm"})
+    assert out.model_output.get("recorded") == "spindle_torque"
+    assert any(m["type"] == "alert" for m in bridge.ws.json_sent)  # 65 > caution 60
+
+
+async def test_logging_completion_does_not_start_procedure(bridge):
+    bridge._last_user_text = "log that I completed the tool change"
+    out = await bridge._apply_tool("start_procedure", {"procedure_id": "tool_change"})
+    assert out.model_output.get("skipped") == "only_logged"
+    assert not any(m["type"] == "panel" and m["panel"] == "procedure" for m in bridge.ws.json_sent)
+
+
+async def test_explicit_start_procedure_still_runs(bridge):
+    bridge._last_user_text = "walk me through the tool change"
+    out = await bridge._apply_tool("start_procedure", {"procedure_id": "tool_change"})
+    assert out.model_output.get("skipped") != "only_logged"
+    assert any(m["type"] == "panel" and m["panel"] == "procedure" for m in bridge.ws.json_sent)
+
+
+def test_log_completion_detector():
+    from app.ws.gateway import _is_log_completion
+
+    assert _is_log_completion("log that I completed the tool change")
+    assert _is_log_completion("for the log, I finished the inspection")
+    assert not _is_log_completion("walk me through the tool change")
+    assert not _is_log_completion("start the pre-start procedure")
 
 
 def test_tool_agent_map_is_valid():

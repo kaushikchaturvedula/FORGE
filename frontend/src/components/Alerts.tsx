@@ -1,6 +1,6 @@
 import type { AlertMsg } from "../lib/api";
 
-export function Alerts({ alerts }: { alerts: AlertMsg[] }) {
+export function Alerts({ alerts, onDismiss }: { alerts: AlertMsg[]; onDismiss?: (i: number) => void }) {
   if (alerts.length === 0) return null;
   return (
     <div className="pointer-events-none absolute right-4 top-16 z-50 flex w-80 flex-col gap-2">
@@ -15,9 +15,14 @@ export function Alerts({ alerts }: { alerts: AlertMsg[] }) {
         >
           <div className="flex items-center gap-2">
             <span>{a.level === "alert" ? "🚨" : "⚠️"}</span>
-            <span className="text-xs font-semibold uppercase tracking-wide" style={{ color: a.level === "alert" ? "#fca5a5" : "#fcd34d" }}>
+            <span className="flex-1 text-xs font-semibold uppercase tracking-wide" style={{ color: a.level === "alert" ? "#fca5a5" : "#fcd34d" }}>
               {a.level} {a.channel ? `· ${a.channel.replace(/_/g, " ")}` : ""}
             </span>
+            {onDismiss && (
+              <button onClick={() => onDismiss(i)} className="text-forge-muted hover:text-forge-text" aria-label="Dismiss alert">
+                ✕
+              </button>
+            )}
           </div>
           <div className="mt-1 text-sm text-forge-text">{a.message}</div>
         </div>

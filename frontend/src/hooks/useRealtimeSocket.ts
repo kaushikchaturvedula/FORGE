@@ -63,6 +63,7 @@ type Action =
   | { k: "msg"; m: ServerMessage }
   | { k: "error"; v: string | null }
   | { k: "tick" }
+  | { k: "dismissAlert"; i: number }
   | { k: "reset" };
 
 let lineId = 0;
@@ -75,6 +76,8 @@ function reducer(s: State, a: Action): State {
       return { ...s, error: a.v };
     case "tick":
       return { ...s, sessionRemaining: Math.max(0, s.sessionRemaining - 1) };
+    case "dismissAlert":
+      return { ...s, alerts: s.alerts.filter((_, idx) => idx !== a.i) };
     case "reset":
       return { ...initial, conn: s.conn };
     case "msg":
@@ -134,9 +137,13 @@ function applyControl(s: State, action: string, payload: Record<string, unknown>
     }
     case "hide_panel": {
       const p = String(payload.panel || "");
-      if (p === "all") return { ...s, visible: {} };
+      // "hide everything" must also clear the floating alert overlay (it's not a panel).
+      if (p === "all") return { ...s, visible: {}, alerts: [] };
+      if (p === "alert" || p === "alerts") return { ...s, alerts: [] };
       return { ...s, visible: { ...s.visible, [p]: false } };
     }
+    case "dismiss_alert":
+      return { ...s, alerts: [] };
     case "rotate_model":
       return {
         ...s,
@@ -271,6 +278,7 @@ export function useRealtimeSocket(config: RuntimeConfig | null) {
   }, [config]);
 
   const clearError = useCallback(() => dispatch({ k: "error", v: null }), []);
+  const dismissAlert = useCallback((i: number) => dispatch({ k: "dismissAlert", i }), []);
 
   const registerFrameProvider = useCallback((fn: FrameProvider | null) => {
     frameProvider.current = fn;
@@ -319,7 +327,7 @@ export function useRealtimeSocket(config: RuntimeConfig | null) {
   useEffect(() => () => disconnect(), [disconnect]);
 
   return useMemo(
-    () => ({ state, connect, disconnect, toggleMic, registerFrameProvider, registerScreenProvider, bargeIn, micActive, manualVision, setManualVision, visionStreaming, clearError }),
-    [state, connect, disconnect, toggleMic, registerFrameProvider, registerScreenProvider, bargeIn, micActive, manualVision, visionStreaming, clearError],
+    () => ({ state, connect, disconnect, toggleMic, registerFrameProvider, registerScreenProvider, bargeIn, micActive, manualVision, setManualVision, visionStreaming, clearError, dismissAlert }),
+    [state, connect, disconnect, toggleMic, registerFrameProvider, registerScreenProvider, bargeIn, micActive, manualVision, visionStreaming, clearError, dismissAlert],
   );
 }

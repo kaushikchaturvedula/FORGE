@@ -65,6 +65,20 @@ def _is_benign_error(message: str) -> bool:
     return any(k in m for k in _BENIGN_ERROR_MARKERS)
 
 
+_LOG_MARKERS = ("log that", "log the", "record that", "make a note", "note that",
+                "i completed", "i finished", "i've completed", "i've finished",
+                "completed the", "finished the", "just finished", "just completed", "for the log")
+_PROC_START_VERBS = ("start", "begin", "walk me", "run the", "let's do", "go through",
+                     "show me the procedure", "open the procedure", "pull up the procedure",
+                     "step me through", "how do i", "how to")
+
+
+def _is_log_completion(text: str) -> bool:
+    """True when the utterance is logging a completed task (NOT asking to start a procedure)."""
+    t = (text or "").lower()
+    return any(m in t for m in _LOG_MARKERS) and not any(v in t for v in _PROC_START_VERBS)
+
+
 def _mostly_non_latin(text: str) -> bool:
     """True when a transcript line is mostly non-Latin script (CJK, Arabic, Cyrillic, …) —
     a gummy mis-transcription of English we drop from the HUD."""
@@ -95,6 +109,7 @@ TOOL_AGENT = {
     "reset_view": "schematic",
     "highlight_component": "schematic",
     "clear_highlight": "schematic",
+    "dismiss_alert": "diagnostic",
     "annotate_field": "field_advisor",
 }
 
@@ -191,6 +206,7 @@ class RealtimeBridge:
         self._asset_label = self.orch.state.asset_id  # header indicator (dims on machine switch)
         self._response_active = False  # a model response is currently streaming
         self._pending_response = False  # create a follow-up response once the current one ends
+        self._last_user_text = ""  # most recent user utterance (guards unrequested procedure starts)
 
     # ── lifecycle ────────────────────────────────────────────────────────────
     async def run(self) -> None:
@@ -390,6 +406,7 @@ class RealtimeBridge:
         elif isinstance(evt, events.InputTranscriptDone):
             await self._on_user_transcript(evt.text)
         elif isinstance(evt, events.SpeechStarted):
+            self.session.set_speaking(True)  # open the image-append window (uncommitted audio)
             await self._safe_send_json(protocol.interrupted())  # barge-in: drain playback
             await self._safe_send_json(protocol.state("listening"))
         elif isinstance(evt, events.SpeechStopped):
@@ -453,6 +470,7 @@ class RealtimeBridge:
         await self._safe_send_json(protocol.transcript("user", text=text, final=True))
         if not text.strip():
             return
+        self._last_user_text = text
         self._last_highlight = None  # re-arm auto-highlight for this new turn
         for name, args in intent.infer_tools(text, self._intent_ctx):
             await self._apply_tool(name, args)
@@ -466,6 +484,14 @@ class RealtimeBridge:
         """Run one tool through the orchestrator and emit its browser effects + routing chip.
         On a dedup (native FC + intent both fired the same call) returns the CACHED outcome so
         the closed loop still feeds the model the real result. Never raises."""
+        # Logging that a task is COMPLETE must not auto-open that procedure's checklist.
+        if name == "start_procedure" and _is_log_completion(self._last_user_text):
+            logger.info("suppressed unrequested start_procedure (utterance only logged completion)")
+            from app.agents.orchestrator import ToolOutcome
+
+            return ToolOutcome(model_output={"ok": False, "skipped": "only_logged",
+                                             "message": "Logged the completion; I did not open the procedure. "
+                                                        "Say 'start the procedure' to walk through it."})
         key = f"{name}:{json.dumps(args, sort_keys=True)}"
         if self.dedup.is_duplicate(key, time.monotonic()):
             logger.info("deduped tool call %s", name)

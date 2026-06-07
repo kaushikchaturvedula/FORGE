@@ -107,21 +107,26 @@ class QwenRealtimeSession:
             return
         await self._send(events.input_audio_append(pcm))
         self._audio_sent = True
-        self._buffer_has_audio = True
         self._last_audio_at = time.monotonic()
 
+    def set_speaking(self, speaking: bool) -> None:
+        """Server VAD says the tech started/stopped speaking. Only WHILE speaking is there
+        guaranteed uncommitted audio in the input buffer — the only safe window to append an
+        image. (The mic streams continuously incl. silence, so append_audio is NOT a usable
+        signal for this.)"""
+        self._buffer_has_audio = speaking
+
     def mark_buffer_committed(self) -> None:
-        """The server committed/emptied the input buffer (after speech_stopped) — images
-        sent now would fail 'append image before append audio', so stop until new speech."""
+        """The server committed/emptied the input buffer (speech ended) — stop sending frames."""
         self._buffer_has_audio = False
 
     async def append_image(self, jpeg: bytes) -> None:
         if not jpeg:
             return
         # The API rejects an image unless real audio is in the CURRENT (uncommitted) buffer.
-        # After each turn the buffer is committed/emptied, so only stream a frame while the
-        # technician is actively speaking — which is exactly when vision matters. This kills
-        # the per-second "append image before append audio" spam between turns.
+        # That's true ONLY between speech_started and speech_stopped (server VAD), so gate on
+        # the speaking window — this kills the per-second "append image before append audio"
+        # spam and stops frames from interrupting an in-flight response (mid-sentence cutoffs).
         if not self._buffer_has_audio:
             return
         await self._send(events.input_image_append(jpeg))

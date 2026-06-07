@@ -30,7 +30,7 @@ const ACCENTS: Record<string, string> = {
 export default function App() {
   const [config, setConfig] = useState<RuntimeConfig | null>(null);
   const [configError, setConfigError] = useState<string | null>(null);
-  const { state, connect, toggleMic, registerFrameProvider, registerScreenProvider, bargeIn, micActive, manualVision, setManualVision, visionStreaming, clearError } = useRealtimeSocket(config);
+  const { state, connect, toggleMic, registerFrameProvider, registerScreenProvider, bargeIn, micActive, manualVision, setManualVision, visionStreaming, clearError, dismissAlert } = useRealtimeSocket(config);
 
   useEffect(() => {
     fetchConfig().then(setConfig).catch((e) => setConfigError(String(e)));
@@ -74,7 +74,7 @@ export default function App() {
         />
 
         <main className="min-h-0 flex-1 overflow-auto p-3">
-          <Alerts alerts={state.alerts} />
+          <Alerts alerts={state.alerts} onDismiss={dismissAlert} />
 
           {configError && (
             <div className="mb-3 rounded border border-forge-alert bg-forge-alert/10 p-3 text-sm text-forge-text">

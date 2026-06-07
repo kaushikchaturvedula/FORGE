@@ -22,7 +22,9 @@ export function ModelPanel({ cmd }: { cmd: ModelCmd }) {
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const homeRef = useRef<{ pos: THREE.Vector3; rot: THREE.Euler; target: THREE.Vector3 } | null>(null);
   const lastSeq = useRef(0);
+  const angles = useRef({ x: 0, y: 0, z: 0 });
   const [loaded, setLoaded] = useState(false);
+  const [angleLabel, setAngleLabel] = useState("");
   const [status, setStatus] = useState("Loading 3D model…");
 
   // One-time scene setup + GLB load.
@@ -118,23 +120,25 @@ export function ModelPanel({ cmd }: { cmd: ModelCmd }) {
     const home = homeRef.current;
     if (!model) return; // not loaded — replay after load via the `loaded` dep
     lastSeq.current = cmd.seq;
+    const ax = cmd.axis ?? "y";
     if (cmd.action === "rotate" && model) {
       const rad = ((cmd.degrees ?? 30) * Math.PI) / 180;
-      if (cmd.axis === "x") model.rotation.x += rad;
-      else if (cmd.axis === "z") model.rotation.z += rad;
-      else model.rotation.y += rad;
+      model.rotation[ax] += rad;
+      angles.current[ax] = (((angles.current[ax] + (cmd.degrees ?? 30)) % 360) + 360) % 360;
     } else if (cmd.action === "set" && model && home) {
       // Absolute angle on the named axis (relative to the model's home orientation).
-      const rad = ((cmd.degrees ?? 0) * Math.PI) / 180;
-      if (cmd.axis === "x") model.rotation.x = home.rot.x + rad;
-      else if (cmd.axis === "z") model.rotation.z = home.rot.z + rad;
-      else model.rotation.y = home.rot.y + rad;
+      const deg = cmd.degrees ?? 0;
+      model.rotation[ax] = home.rot[ax] + (deg * Math.PI) / 180;
+      angles.current[ax] = ((deg % 360) + 360) % 360;
     } else if (cmd.action === "reset" && model && camera && controls && home) {
       model.rotation.copy(home.rot);
       camera.position.copy(home.pos);
       controls.target.copy(home.target);
       controls.update();
+      angles.current = { x: 0, y: 0, z: 0 };
     }
+    const a = angles.current;
+    setAngleLabel(([["X", a.x], ["Y", a.y], ["Z", a.z]] as const).filter(([, v]) => v).map(([k, v]) => `${k} ${Math.round(v)}°`).join("  "));
   }, [cmd, loaded]);
 
   return (
@@ -143,6 +147,11 @@ export function ModelPanel({ cmd }: { cmd: ModelCmd }) {
       <div className="pointer-events-none absolute left-2 top-2 rounded bg-black/50 px-2 py-0.5 text-[10px] text-forge-muted">
         drag to orbit · “rotate 30 degrees” · “reset the view”
       </div>
+      {angleLabel && (
+        <div className="pointer-events-none absolute right-2 top-2 rounded bg-black/60 px-2 py-0.5 font-mono text-[11px] text-forge-accent">
+          {angleLabel}
+        </div>
+      )}
       {status && (
         <div className="pointer-events-none absolute inset-0 flex items-center justify-center text-sm text-forge-muted">{status}</div>
       )}

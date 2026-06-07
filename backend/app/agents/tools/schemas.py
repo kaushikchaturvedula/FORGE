@@ -248,6 +248,13 @@ TOOLS: dict[str, dict[str, Any]] = {
         {},
         [],
     ),
+    "dismiss_alert": _fn(
+        "dismiss_alert",
+        "Dismiss/clear the threshold-alert overlay (e.g. the spindle-torque alert). Also call "
+        "this when the tech says to clear or hide the alert.",
+        {},
+        [],
+    ),
     "annotate_field": _fn(
         "annotate_field",
         "Draw a labeled callout on the live field-vision video at an approximate region (top-left, right, center, ...).",

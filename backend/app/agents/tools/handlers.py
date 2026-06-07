@@ -153,7 +153,7 @@ def lookup_torque(state: SessionState, args: dict) -> ToolResult:
 
 # ── measurements + thresholds ────────────────────────────────────────────────
 def record_measurement(state: SessionState, args: dict) -> ToolResult:
-    mtype = str(args.get("type", "")).lower()
+    mtype = str(args.get("type", "")).lower().replace(" ", "_").replace("-", "_")
     value = float(args.get("value"))
     unit = args.get("unit", "")
     state.telemetry[mtype] = value
@@ -480,6 +480,11 @@ def clear_highlight(state: SessionState, args: dict) -> ToolResult:
     return ToolResult(output={"highlight": "cleared"}, control={"action": "clear_highlight"})
 
 
+def dismiss_alert(state: SessionState, args: dict) -> ToolResult:
+    """Clear the threshold-alert overlay (it floats outside the panels, so hide_panel can't)."""
+    return ToolResult(output={"alerts": "dismissed"}, control={"action": "dismiss_alert"})
+
+
 # ── field-vision callout (approximate) ───────────────────────────────────────
 def annotate_field(state: SessionState, args: dict) -> ToolResult:
     """Draw a labeled callout on the FIELD VISION video at an approximate region."""
@@ -536,6 +541,7 @@ HANDLERS: dict[str, Callable[[SessionState, dict], ToolResult]] = {
     "reset_view": reset_view,
     "highlight_component": highlight_component,
     "clear_highlight": clear_highlight,
+    "dismiss_alert": dismiss_alert,
     "annotate_field": annotate_field,
     "activate_vision": activate_vision,
     "deactivate_vision": deactivate_vision,

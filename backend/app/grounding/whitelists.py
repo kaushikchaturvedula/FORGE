@@ -107,7 +107,7 @@ def validate(tool_name: str, args: dict) -> ValidationResult:
         return _OK
 
     if tool_name == "record_measurement":
-        mt = str(args.get("type", "")).lower()
+        mt = str(args.get("type", "")).lower().replace(" ", "_").replace("-", "_")
         if mt not in MEASUREMENT_TYPES:
             return _reject(
                 f"I can record {', '.join(sorted(MEASUREMENT_TYPES))} — not {mt!r}."
