@@ -462,6 +462,10 @@ class RealtimeBridge:
                     await self.session.create_response()
                 except Exception as exc:  # noqa: BLE001
                     logger.debug("deferred create_response: %r", exc)
+            else:
+                # Turn fully done — re-assert the current SCREEN STATE so it sits right before
+                # the next user turn (adjacent to "what's on screen?"), not buried up-context.
+                await self._inject_ui_state(force=True)
         elif isinstance(evt, events.SessionUpdated):
             has_tools = bool(evt.session.get("tools"))
             logger.info("session.updated echo: tools_supported=%s keys=%s", has_tools, sorted(evt.session)[:12])
@@ -588,13 +592,18 @@ class RealtimeBridge:
         self._asset_label = label
         await self._safe_send_json(protocol.control("asset", label=label))
 
-    async def _inject_ui_state(self) -> None:
+    async def _inject_ui_state(self, force: bool = False) -> None:
         """Tell the model what is currently displayed, so it answers 'what's on screen?' from
-        truth and never claims a panel that isn't up. Injected only when it changes."""
+        truth and never claims a panel that isn't up. `force` re-asserts the CURRENT state even
+        if unchanged, so the line sits ADJACENT to the next turn instead of buried far up the
+        context (the weak model doesn't retrieve a stale, distant SCREEN STATE)."""
+        if not self.session.connected:
+            return
         summary = build_ui_state(self.orch.state)
-        if summary == self._ui_state_hash or not self.session.connected:
+        if not force and summary == self._ui_state_hash:
             return
         self._ui_state_hash = summary
+        logger.info("inject SCREEN STATE: %s", summary)  # diagnostic: model-vs-code attribution
         try:
             await self.session.inject_message(f"SCREEN STATE: {summary}", role="system")
         except Exception as exc:  # noqa: BLE001

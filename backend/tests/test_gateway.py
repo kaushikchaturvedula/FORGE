@@ -427,6 +427,54 @@ def test_execute_tool_syncs_visible_panels():
     assert r2.output.get("not_shown") == "overview"
 
 
+# ── screen-awareness: SCREEN STATE injected adjacent to every turn ───────────
+async def test_inject_ui_state_force_always_injects(bridge):
+    bridge.orch.state.visible_panels = {"schematic"}
+    await bridge._inject_ui_state()  # first time -> injects (hash was empty)
+    bridge.session.injected = []
+    await bridge._inject_ui_state()  # unchanged + not forced -> skip
+    assert bridge.session.injected == []
+    await bridge._inject_ui_state(force=True)  # forced -> injects even though unchanged
+    assert any("SCREEN STATE" in text for _role, text in bridge.session.injected)
+
+
+async def test_response_done_reasserts_screen_state(bridge):
+    from app.ws.gateway import build_ui_state
+    from app.realtime import events
+
+    bridge.orch.state.visible_panels = {"schematic", "overview"}
+    bridge._ui_state_hash = build_ui_state(bridge.orch.state)  # pretend already injected earlier
+    bridge.session.injected = []
+    bridge._pending_response = False
+    await bridge._handle_server_event(events.ResponseDone())
+    # even though the state didn't change, a fresh SCREEN STATE sits before the next user turn
+    assert any("SCREEN STATE" in text for _role, text in bridge.session.injected)
+
+
+def test_visible_panels_correct_through_churn():
+    # Fix 2: heavy show/hide churn ends with a correct set, no stale entries.
+    from app.grounding.callbacks import execute_tool
+    from app.agents.session_state import SessionState
+    from app.ws.gateway import build_ui_state
+
+    s = SessionState()
+    execute_tool(s, "show_schematic", {"diagram_type": "Spindle Assembly"})
+    execute_tool(s, "highlight_component", {"name": "drawbar"})       # detailed -> schematic
+    execute_tool(s, "set_rotation", {"degrees": 90, "axis": "x"})     # reveals 3D model
+    execute_tool(s, "reset_view", {})
+    assert s.visible_panels == {"schematic", "model"}
+    execute_tool(s, "hide_panel", {"panel": "3D model"})
+    execute_tool(s, "hide_panel", {"panel": "schematic"})
+    assert s.visible_panels == set()
+    # control-panel schematic doesn't exist -> rejected, set unchanged (not a silent spindle)
+    execute_tool(s, "show_schematic", {"diagram_type": "control panel"})
+    assert s.visible_panels == set()
+    execute_tool(s, "show_schematic", {"diagram_type": "Spindle Assembly"})
+    execute_tool(s, "highlight_component", {"name": "control box"})   # whole-machine -> overview
+    assert s.visible_panels == {"schematic", "overview"}
+    assert build_ui_state(s) == "showing the machine map (highlighting the Control box), the spindle schematic."
+
+
 def test_tool_agent_map_is_valid():
     from app.agents.tools import schemas
     from app.agents.specialists import AGENTS
