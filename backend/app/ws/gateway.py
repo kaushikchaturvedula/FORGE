@@ -222,6 +222,8 @@ class RealtimeBridge:
         self._pending_response = False  # create a follow-up response once the current one ends
         self._last_audio_delta_at = 0.0  # diagnostics: when the last audio chunk arrived
         self._text_done = False  # diagnostics: has the response's text finished?
+        self._announced_alerts: set[str] = set()  # threshold crossings already announced (de-dupe)
+        self._pending_proactive: tuple[str, str] | None = None  # (signature, grounded facts) to speak
         self._forge_recent_text = ""  # FORGE's current/last spoken text (to detect echo)
         self._spoke_over_forge = False  # the in-progress user turn began while FORGE was speaking
         self._forge_text_at_barge = ""  # FORGE's text when that user turn started
@@ -466,6 +468,7 @@ class RealtimeBridge:
                 # Turn fully done — re-assert the current SCREEN STATE so it sits right before
                 # the next user turn (adjacent to "what's on screen?"), not buried up-context.
                 await self._inject_ui_state(force=True)
+                await self._maybe_speak_proactive()  # autopilot: speak a queued safety alert
         elif isinstance(evt, events.SessionUpdated):
             has_tools = bool(evt.session.get("tools"))
             logger.info("session.updated echo: tools_supported=%s keys=%s", has_tools, sorted(evt.session)[:12])
@@ -569,6 +572,7 @@ class RealtimeBridge:
 
             outcome = ToolOutcome(model_output={"error": "tool_failed", "message": f"{name} failed: {exc}"})
         self._outcome_cache[key] = outcome
+        self._queue_proactive_alert(name, outcome)  # autopilot: queue a safety alert on a threshold crossing
         if name == "hide_panel" and outcome.model_output.get("not_shown"):
             # Decisive diagnostic: was the target genuinely absent (tracking gap) or did the
             # model just deny a panel that IS up (confabulation)?
@@ -608,6 +612,51 @@ class RealtimeBridge:
             await self.session.inject_message(f"SCREEN STATE: {summary}", role="system")
         except Exception as exc:  # noqa: BLE001
             logger.debug("inject ui state: %r", exc)
+
+    # ── proactive (autopilot) safety alerts ──────────────────────────────────
+    def _queue_proactive_alert(self, name: str, outcome) -> None:
+        """When a recorded value crosses a threshold, queue ONE server-composed spoken alert.
+        The decision is the SERVER's (grounded breach facts), not the model's. De-duped by a
+        channel:level signature so an identical still-active crossing won't re-announce, but an
+        escalation (warn→alert) will. Reset on dismiss_alert / hide_panel('all')."""
+        mo = outcome.model_output if outcome is not None else {}
+        if name in ("dismiss_alert",) or (name == "hide_panel" and mo.get("hidden") == "all"):
+            self._announced_alerts.clear()  # alerts cleared — let a fresh crossing re-announce
+            self._pending_proactive = None
+            return
+        if name != "record_measurement" or mo.get("status") not in ("warn", "alert"):
+            return
+        breaches = mo.get("breaches") or []
+        if not breaches:
+            return
+        signature = ";".join(sorted(f"{b.get('channel')}:{b.get('level')}" for b in breaches))
+        if signature in self._announced_alerts:
+            return  # this exact crossing is already on the screen and was announced
+        facts = "; ".join(b.get("message", "") for b in breaches)
+        self._pending_proactive = (signature, facts)
+
+    async def _maybe_speak_proactive(self) -> None:
+        """Speak a queued safety alert at a SAFE point: no active response and the user isn't
+        mid-utterance (so it never truncates their audio or barges in). Called on ResponseDone;
+        if it's not safe yet, the alert stays queued and fires on the next ResponseDone."""
+        if self._pending_proactive is None or not self.session.connected:
+            return
+        if self._response_active or getattr(self.session, "_buffer_has_audio", False):
+            return  # user is speaking / a response is live — wait for the next safe moment
+        signature, facts = self._pending_proactive
+        self._pending_proactive = None
+        self._announced_alerts.add(signature)
+        logger.info("proactive alert fired: %s | %s", signature, facts)
+        directive = (
+            "SAFETY ALERT — announce this to the technician right now, unprompted, in one short "
+            f"spoken sentence; keep these numbers exact: {facts}. Then recommend pausing to "
+            "confirm it's safe before the next cut."
+        )
+        try:
+            await self.session.inject_message(directive, role="system")
+            await self.session.create_response()
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("proactive alert speak: %r", exc)
 
     # ── helpers ──────────────────────────────────────────────────────────────
     def _remaining(self) -> int:

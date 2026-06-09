@@ -102,6 +102,8 @@ def bridge():
     b._asset_label = b.orch.state.asset_id
     b._response_active = False
     b._pending_response = False
+    b._announced_alerts = set()
+    b._pending_proactive = None
     b._forge_recent_text = ""
     b._spoke_over_forge = False
     b._forge_text_at_barge = ""
@@ -425,6 +427,66 @@ def test_execute_tool_syncs_visible_panels():
     # genuinely absent -> honest not_shown
     r2 = execute_tool(SessionState(), "hide_panel", {"panel": "machine map"})
     assert r2.output.get("not_shown") == "overview"
+
+
+# ── proactive (autopilot) safety alerts ─────────────────────────────────────
+async def _drain_to_speak(bridge):
+    """Run a ResponseDone (turn fully done) so a queued proactive alert can fire."""
+    from app.realtime import events
+
+    bridge._pending_response = False
+    await bridge._handle_server_event(events.ResponseDone())
+
+
+async def test_proactive_alert_fires_once_with_grounded_numbers(bridge):
+    # telemetry seeds tool_wear=191, so torque 65 trips the 60 caution + the OSF limit.
+    bridge.session.injected = []
+    bridge.session.responses = 0
+    await bridge._apply_tool("record_measurement", {"type": "spindle_torque", "value": 65, "unit": "Nm"})
+    assert bridge._pending_proactive is not None
+    await _drain_to_speak(bridge)
+    spoken = " ".join(text for _r, text in bridge.session.injected)
+    assert "65" in spoken and "60" in spoken          # grounded value + limit, not a placeholder
+    assert bridge.session.responses == 1               # spoke exactly once
+    # a fresh crossing with the SAME signature (66: still warn+OSF) must NOT re-announce
+    bridge.session.responses = 0
+    await bridge._apply_tool("record_measurement", {"type": "spindle_torque", "value": 66, "unit": "Nm"})
+    assert bridge._pending_proactive is None
+    await _drain_to_speak(bridge)
+    assert bridge.session.responses == 0
+
+
+async def test_proactive_alert_below_threshold_is_silent(bridge):
+    bridge.session.injected = []
+    bridge.session.responses = 0
+    # 30 Nm: under the 60 caution AND overstrain 30*191=5730 under the 9500 caution -> no breach
+    await bridge._apply_tool("record_measurement", {"type": "spindle_torque", "value": 30, "unit": "Nm"})
+    assert bridge._pending_proactive is None
+    await _drain_to_speak(bridge)
+    assert bridge.session.responses == 0  # no proactive spoken turn
+    assert not any("SAFETY ALERT" in text for _r, text in bridge.session.injected)  # (SCREEN STATE is fine)
+
+
+async def test_proactive_alert_re_announces_after_dismiss(bridge):
+    await bridge._apply_tool("record_measurement", {"type": "spindle_torque", "value": 65, "unit": "Nm"})
+    await _drain_to_speak(bridge)
+    await bridge._apply_tool("dismiss_alert", {})       # clears the de-dupe
+    assert bridge._announced_alerts == set()
+    bridge.session.responses = 0
+    await bridge._apply_tool("record_measurement", {"type": "spindle_torque", "value": 66, "unit": "Nm"})
+    await _drain_to_speak(bridge)
+    assert bridge.session.responses == 1               # fires again after dismissal
+
+
+async def test_proactive_alert_deferred_while_user_speaking(bridge):
+    bridge.session.responses = 0
+    bridge.session._buffer_has_audio = True             # user is mid-utterance
+    await bridge._apply_tool("record_measurement", {"type": "spindle_torque", "value": 65, "unit": "Nm"})
+    await _drain_to_speak(bridge)
+    assert bridge.session.responses == 0 and bridge._pending_proactive is not None  # held, not spoken
+    bridge.session._buffer_has_audio = False            # user stopped
+    await _drain_to_speak(bridge)
+    assert bridge.session.responses == 1               # fires at the next safe moment
 
 
 # ── screen-awareness: SCREEN STATE injected adjacent to every turn ───────────
