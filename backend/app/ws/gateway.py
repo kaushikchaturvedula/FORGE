@@ -33,7 +33,7 @@ import time
 
 from starlette.websockets import WebSocket, WebSocketDisconnect
 
-from app.agents import intent
+from app.agents import intent, workflows
 from app.agents.orchestrator import Orchestrator
 from app.agents.session_state import SessionState
 from app.config import Settings, get_settings
@@ -229,6 +229,7 @@ class RealtimeBridge:
         self._diagnosis_inflight = False  # a diagnosis is currently running
         self._diagnosis_done_sig: str | None = None  # last condition already diagnosed (de-dupe)
         self._pending_diagnosis_text: str | None = None  # silent context line to inject when safe
+        self._workflow: dict | None = None  # active autonomous workflow {name, steps, index, paused}
         self._forge_recent_text = ""  # FORGE's current/last spoken text (to detect echo)
         self._spoke_over_forge = False  # the in-progress user turn began while FORGE was speaking
         self._forge_text_at_barge = ""  # FORGE's text when that user turn started
@@ -473,8 +474,13 @@ class RealtimeBridge:
                 # Turn fully done — re-assert the current SCREEN STATE so it sits right before
                 # the next user turn (adjacent to "what's on screen?"), not buried up-context.
                 await self._inject_ui_state(force=True)
-                await self._maybe_speak_proactive()  # autopilot: speak a queued safety alert
-                await self._flush_pending_diagnosis()  # autopilot: silently load a ready diagnosis
+                await self._flush_pending_diagnosis()  # silent context load (no spoken turn)
+                # At most ONE create_response below: an active workflow drives the chain; the
+                # proactive safety alert defers to the next turn while a workflow is running.
+                if self._workflow is not None and not self._workflow["paused"]:
+                    await self._advance_workflow()  # autopilot: run + voice the next step
+                else:
+                    await self._maybe_speak_proactive()  # autopilot: speak a queued safety alert
         elif isinstance(evt, events.SessionUpdated):
             has_tools = bool(evt.session.get("tools"))
             logger.info("session.updated echo: tools_supported=%s keys=%s", has_tools, sorted(evt.session)[:12])
@@ -538,6 +544,16 @@ class RealtimeBridge:
         await self._safe_send_json(protocol.transcript("user", text=text, final=True))
         self._last_user_text = text
         self._last_highlight = None  # re-arm auto-highlight for this new turn
+        # Autonomous workflows: handle an active chain first, then a high-level trigger.
+        if self._workflow is not None:
+            if self._workflow["paused"] and workflows.is_affirmation(text):
+                await self._workflow_confirm()  # gate cleared — run the final (gated) step
+                return
+            self._abandon_workflow("user spoke" if not self._workflow["paused"] else "not confirmed")
+            # fall through: handle this utterance normally (don't bulldoze the user)
+        elif (wf := workflows.match_workflow(text)) is not None:
+            self._start_workflow(wf)  # steps run autonomously on each ResponseDone
+            return
         if "diagnos" in text.lower() and self.orch.state.diagnosis is None:
             # On-demand: generate a diagnosis if none exists yet (open fault + telemetry are
             # always grounded inputs). If one exists, FORGE just reads the injected context.
@@ -741,6 +757,68 @@ class RealtimeBridge:
             await self.session.inject_message(text, role="system")
         except Exception as exc:  # noqa: BLE001
             logger.debug("inject diagnosis context: %r", exc)
+
+    # ── autonomous workflow chaining (server-sequenced, model-voiced) ─────────
+    def _start_workflow(self, name: str) -> None:
+        steps = workflows.build(name, self.orch.state.asset_id)
+        self._workflow = {"name": name, "steps": steps, "index": 0, "paused": False}
+        logger.info("workflow %s started (%d steps)", name, len(steps))
+        # The model's free-form reply to the trigger plays first; step 0 runs on its ResponseDone.
+
+    async def _advance_workflow(self) -> None:
+        """Run ONE workflow step at a safe point: execute its handler, then voice a grounded
+        line (create_response). The next ResponseDone advances the following step. A gated step
+        proposes + pauses and does NOT run its tool until the tech confirms."""
+        wf = self._workflow
+        if wf is None or wf["paused"]:
+            return
+        if wf["index"] >= len(wf["steps"]):
+            self._complete_workflow()
+            return
+        step = wf["steps"][wf["index"]]
+        if step.gate:
+            wf["paused"] = True
+            logger.info("workflow %s paused-for-confirm at step %d: propose %s",
+                        wf["name"], wf["index"], step.tool)
+            await self._speak_workflow_line(step)  # propose; the tool runs only on confirm
+            return
+        if step.special == "diagnosis":
+            self._schedule_diagnosis("workflow", "workflow", self._diagnosis_inputs([]))
+        elif step.tool:
+            await self._apply_tool(step.tool, dict(step.args))
+        logger.info("workflow %s step %d: %s", wf["name"], wf["index"], step.tool or step.special)
+        wf["index"] += 1
+        await self._speak_workflow_line(step)
+
+    async def _workflow_confirm(self) -> None:
+        """The tech confirmed at the gate — run the final (gated) step's tool, then complete."""
+        wf = self._workflow
+        step = wf["steps"][wf["index"]]
+        if step.tool:
+            await self._apply_tool(step.tool, dict(step.args))
+        logger.info("workflow %s confirmed: ran %s", wf["name"], step.tool)
+        self._complete_workflow()
+
+    def _complete_workflow(self) -> None:
+        if self._workflow is not None:
+            logger.info("workflow %s complete", self._workflow["name"])
+        self._workflow = None
+
+    def _abandon_workflow(self, reason: str) -> None:
+        if self._workflow is not None:
+            logger.info("workflow %s interrupted (%s)", self._workflow["name"], reason)
+        self._workflow = None
+
+    async def _speak_workflow_line(self, step) -> None:
+        """Voice one grounded step line at the safe point (inject the directive + create_response)."""
+        try:
+            await self.session.inject_message(
+                f"AUTOPILOT WORKFLOW — {step.say} Keep it to one short spoken sentence.",
+                role="system",
+            )
+            await self.session.create_response()
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("workflow speak: %r", exc)
 
     # ── helpers ──────────────────────────────────────────────────────────────
     def _remaining(self) -> int:

@@ -108,6 +108,7 @@ def bridge():
     b._diagnosis_inflight = False
     b._diagnosis_done_sig = None
     b._pending_diagnosis_text = None
+    b._workflow = None
     b._forge_recent_text = ""
     b._spoke_over_forge = False
     b._forge_text_at_barge = ""
@@ -491,6 +492,73 @@ async def test_proactive_alert_deferred_while_user_speaking(bridge):
     bridge.session._buffer_has_audio = False            # user stopped
     await _drain_to_speak(bridge)
     assert bridge.session.responses == 1               # fires at the next safe moment
+
+
+# ── autonomous workflow chaining ─────────────────────────────────────────────
+async def test_workflow_runs_steps_in_order_and_pauses_at_gate(bridge, monkeypatch):
+    calls = []
+
+    async def fake_apply(name, args):
+        calls.append((name, dict(args)))
+
+    monkeypatch.setattr(bridge, "_apply_tool", fake_apply)
+    monkeypatch.setattr(bridge, "_schedule_diagnosis", lambda *a: calls.append(("diagnosis", {})))
+    bridge._start_workflow("unclamp_fault")
+    for _ in range(6):  # more than enough to reach the gate
+        await bridge._advance_workflow()
+    assert calls == [
+        ("show_machine_data", {"data_type": "faults"}),
+        ("show_machine_data", {"data_type": "telemetry"}),
+        ("highlight_component", {"name": "Drawbar"}),
+        ("diagnosis", {}),
+    ]
+    assert bridge._workflow["paused"] is True                    # paused at the procedure gate
+    assert not any(n == "start_procedure" for n, _ in calls)     # NOT auto-started
+
+
+async def test_workflow_confirm_runs_the_gated_procedure(bridge, monkeypatch):
+    from app.agents import workflows as _wf
+
+    started = []
+
+    async def fake_apply(name, args):
+        started.append(name)
+
+    monkeypatch.setattr(bridge, "_apply_tool", fake_apply)
+    bridge._workflow = {"name": "unclamp_fault",
+                        "steps": _wf.build("unclamp_fault", bridge.orch.state.asset_id),
+                        "index": 4, "paused": True}
+    await bridge._on_user_transcript("confirmed")
+    assert "start_procedure" in started and bridge._workflow is None
+
+
+async def test_workflow_abandoned_by_unrelated_utterance(bridge, monkeypatch):
+    calls = []
+
+    async def fake_apply(name, args):
+        calls.append(name)
+
+    monkeypatch.setattr(bridge, "_apply_tool", fake_apply)
+    from app.agents import workflows as _wf
+    bridge._workflow = {"name": "unclamp_fault",
+                        "steps": _wf.build("unclamp_fault", bridge.orch.state.asset_id),
+                        "index": 1, "paused": False}
+    await bridge._on_user_transcript("show me the spindle schematic")
+    assert bridge._workflow is None                              # abandoned (no bulldozing)
+    assert "show_schematic" in calls                            # the new request is handled normally
+
+
+async def test_workflow_step_speaks_via_create_response(bridge, monkeypatch):
+    async def fake_apply(name, args):
+        return None
+
+    monkeypatch.setattr(bridge, "_apply_tool", fake_apply)
+    bridge.session.injected = []
+    bridge.session.responses = 0
+    bridge._start_workflow("unclamp_fault")
+    await bridge._advance_workflow()  # step 0
+    assert any("AUTOPILOT WORKFLOW" in t for _r, t in bridge.session.injected)
+    assert bridge.session.responses == 1  # one spoken turn per step (safe-point create_response)
 
 
 # ── off-loop background diagnostic agent ─────────────────────────────────────
