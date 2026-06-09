@@ -38,7 +38,8 @@ _ASSET = {
 TOOLS: dict[str, dict[str, Any]] = {
     "show_machine_data": _fn(
         "show_machine_data",
-        "Display machine information on the console: nameplate, specs, live telemetry, maintenance history, or open faults.",
+        "Call to show machine info on the console — nameplate, specs, live telemetry, maintenance "
+        "history, or open faults (e.g. 'show the specs', 'are there any open faults?').",
         {
             "asset_id": _ASSET,
             "data_type": {
@@ -51,7 +52,8 @@ TOOLS: dict[str, dict[str, Any]] = {
     ),
     "show_schematic": _fn(
         "show_schematic",
-        "Render a labeled schematic (spindle, turret, or axes) on the schematic panel and reveal it.",
+        "Call to bring up a labeled schematic — spindle, turret, or axes — on the schematic panel "
+        "(e.g. 'show the spindle schematic').",
         {
             "asset_id": _ASSET,
             "diagram_type": {
@@ -63,7 +65,8 @@ TOOLS: dict[str, dict[str, Any]] = {
     ),
     "navigate_schematic": _fn(
         "navigate_schematic",
-        "Move around the current schematic: jump to a labeled component, zoom, pan, reset, or toggle a layer.",
+        "Call to move around the schematic already shown: jump to a labeled component, zoom, pan, "
+        "reset, or toggle a layer (e.g. 'zoom in on the drawbar').",
         {
             "action": {
                 "type": "string",
@@ -83,7 +86,8 @@ TOOLS: dict[str, dict[str, Any]] = {
     ),
     "lookup_part": _fn(
         "lookup_part",
-        "Return the part number and specification for a named component. Never state a part number without calling this.",
+        "Call to get the part number + spec for a named component (e.g. 'what's the part number for "
+        "the drawbar?'). Never state a part number without calling this.",
         {
             "query": {
                 "type": "string",
@@ -94,7 +98,8 @@ TOOLS: dict[str, dict[str, Any]] = {
     ),
     "lookup_torque": _fn(
         "lookup_torque",
-        "Return the torque specification (Nm + tightening sequence) for a fastener. Never state a torque value without calling this.",
+        "Call to get the torque spec (Nm + tightening sequence) for a fastener (e.g. 'what's the "
+        "torque on the tool-holder bolt?'). Never state a torque value without calling this.",
         {
             "fastener_id": {
                 "type": "string",
@@ -105,7 +110,9 @@ TOOLS: dict[str, dict[str, Any]] = {
     ),
     "record_measurement": _fn(
         "record_measurement",
-        "Log a measured reading with the timestamp and raise an alert if it crosses a configured failure threshold.",
+        "Call whenever the tech states a measured value to record (e.g. 'record spindle torque at "
+        "65'). ALWAYS call it — never just acknowledge the value in speech. Timestamps the reading "
+        "and raises an alert if it crosses a failure threshold.",
         {
             "type": {
                 "type": "string",
@@ -119,7 +126,10 @@ TOOLS: dict[str, dict[str, Any]] = {
     ),
     "run_safety_check": _fn(
         "run_safety_check",
-        "Start or advance a safety checklist (LOTO, PPE, pre-start). Use action='start' to begin and present item 1; after the technician verbally confirms an item, call action='confirm' to advance. Never advance without spoken confirmation.",
+        "Call to start or advance a safety checklist — LOTO, PPE, or pre-start (e.g. 'run the "
+        "pre-start safety check'). Use action='start' to begin and present item 1; after the "
+        "technician verbally confirms an item, call action='confirm' to advance. Never advance "
+        "without spoken confirmation.",
         {
             "check_type": {
                 "type": "string",
@@ -135,7 +145,9 @@ TOOLS: dict[str, dict[str, Any]] = {
     ),
     "start_procedure": _fn(
         "start_procedure",
-        "Load a step-by-step maintenance/repair procedure and show step 1 on the procedure panel.",
+        "Call ONLY when the tech asks to start or walk through a procedure (e.g. 'walk me through "
+        "the tool change'); loads the steps and shows step 1. Do NOT start a procedure just because "
+        "a task was logged complete.",
         {
             "procedure_id": {
                 "type": "string",
@@ -146,7 +158,8 @@ TOOLS: dict[str, dict[str, Any]] = {
     ),
     "procedure_step": _fn(
         "procedure_step",
-        "Move within the active procedure: next, previous, or repeat the current step.",
+        "Call to move within the procedure already in progress: next, previous, or repeat the "
+        "current step (e.g. 'next step').",
         {
             "action": {
                 "type": "string",
@@ -158,7 +171,8 @@ TOOLS: dict[str, dict[str, Any]] = {
     ),
     "log_event": _fn(
         "log_event",
-        "Add a timestamped entry to the work-order log as the job happens.",
+        "Call to add a timestamped entry to the work-order log (e.g. 'log that I completed the tool "
+        "change'). Logs ONLY — it does not start or display a procedure.",
         {
             "event_type": {
                 "type": "string",
@@ -170,31 +184,36 @@ TOOLS: dict[str, dict[str, Any]] = {
     ),
     "capture_photo": _fn(
         "capture_photo",
-        "Capture a timestamped still from the live field-vision feed into the work-order log.",
+        "Call to grab a timestamped still from the live field-vision feed into the work-order log "
+        "(e.g. 'take a photo of this').",
         {"caption": {"type": "string", "description": "Optional caption for the photo."}},
         [],
     ),
     "generate_report": _fn(
         "generate_report",
-        "Generate the narrative work-order report from everything logged this session.",
+        "Call to produce the narrative work-order report from everything logged this session "
+        "(e.g. 'generate the report').",
         {},
         [],
     ),
     "prepare_handoff": _fn(
         "prepare_handoff",
-        "Generate the structured shift-handoff (SBAR-style) from the session.",
+        "Call to produce the structured SBAR shift-handoff from the session (e.g. 'prepare the "
+        "shift handoff').",
         {},
         [],
     ),
     "show_panel": _fn(
         "show_panel",
-        "Show a console panel.",
+        "Call to reveal a console panel by name (e.g. 'show the machine map', 'bring up the 3D "
+        "model'); 'all' shows everything.",
         {"panel": {"type": "string", "enum": sorted(wl.PANELS), "description": "Panel to show ('all' shows everything)."}},
         ["panel"],
     ),
     "hide_panel": _fn(
         "hide_panel",
-        "Hide a console panel ('all' clears the console).",
+        "Call to hide ONE named panel (e.g. 'hide the spindle schematic'); only 'all' clears the "
+        "whole console — never use 'all' for a specific hide.",
         {"panel": {"type": "string", "enum": sorted(wl.PANELS), "description": "Panel to hide."}},
         ["panel"],
     ),
@@ -206,13 +225,14 @@ TOOLS: dict[str, dict[str, Any]] = {
     ),
     "deactivate_vision": _fn(
         "deactivate_vision",
-        "Stop the live field-vision feed to conserve tokens when vision is no longer needed.",
+        "Stop the live field-vision feed to conserve tokens when vision is no longer needed (system-managed).",
         {},
         [],
     ),
     "rotate_model": _fn(
         "rotate_model",
-        "Rotate the 3D machine model by a number of degrees on an axis (whole-model orientation).",
+        "Call to rotate the 3D model by a RELATIVE amount on an axis (e.g. 'rotate another 30', "
+        "'turn it 30 more'). For a specific target angle use set_rotation instead.",
         {
             "degrees": {"type": "number", "description": "Degrees to rotate (e.g. 30, 90)."},
             "axis": {"type": "string", "enum": sorted(wl.ROTATE_AXES), "description": "Axis to rotate on (default y)."},
@@ -221,9 +241,10 @@ TOOLS: dict[str, dict[str, Any]] = {
     ),
     "set_rotation": _fn(
         "set_rotation",
-        "Set the 3D model to an ABSOLUTE angle on an axis (does NOT add to the current angle). "
-        "Use for a specific target angle ('rotate to 90', 'make it 90 on X') and for corrections "
-        "('30, sorry 90') — emit ONE set_rotation with the final value, not stacked rotate_model calls.",
+        "Call to set the 3D model to an ABSOLUTE angle on an axis — does NOT add to the current "
+        "angle. Use for a specific target angle ('rotate to 90', 'make it 90 on X') and for "
+        "corrections ('30, sorry 90') — emit ONE set_rotation with the final value, not stacked "
+        "rotate_model calls.",
         {
             "degrees": {"type": "number", "description": "Absolute angle in degrees."},
             "axis": {"type": "string", "enum": sorted(wl.ROTATE_AXES), "description": "Axis (default y)."},
@@ -232,32 +253,33 @@ TOOLS: dict[str, dict[str, Any]] = {
     ),
     "reset_view": _fn(
         "reset_view",
-        "Reset the 3D model to its default camera and orientation.",
+        "Call to reset the 3D model to its default camera and orientation (e.g. 'reset the view').",
         {},
         [],
     ),
     "highlight_component": _fn(
         "highlight_component",
-        "Point at / outline a named machine component on the overview schematic (drawbar, spindle, coolant union, turret, chuck, control box, etc.).",
+        "Call to outline a named part (e.g. 'highlight the drawbar'); shows it on its detailed "
+        "schematic, or on the machine map for whole-machine parts like the control box.",
         {"name": {"type": "string", "description": "The component to highlight."}},
         ["name"],
     ),
     "clear_highlight": _fn(
         "clear_highlight",
-        "Remove any component highlight from the overview schematic.",
+        "Call to remove the component highlight from the schematic (e.g. 'clear the highlight').",
         {},
         [],
     ),
     "dismiss_alert": _fn(
         "dismiss_alert",
-        "Dismiss/clear the threshold-alert overlay (e.g. the spindle-torque alert). Also call "
-        "this when the tech says to clear or hide the alert.",
+        "Call to dismiss/clear the threshold-alert overlay (e.g. 'dismiss the alert', 'hide the alert').",
         {},
         [],
     ),
     "annotate_field": _fn(
         "annotate_field",
-        "Draw a labeled callout on the live field-vision video at an approximate region (top-left, right, center, ...).",
+        "Call to draw a labeled callout on the live field-vision video at an approximate region "
+        "(e.g. 'mark the coolant leak, top-right').",
         {
             "label": {"type": "string", "description": "Short callout text."},
             "region": {"type": "string", "description": "Approximate region of the frame, e.g. top-right."},
