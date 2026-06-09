@@ -37,6 +37,7 @@ from app.agents import intent
 from app.agents.orchestrator import Orchestrator
 from app.agents.session_state import SessionState
 from app.config import Settings, get_settings
+from app.data.catalog import catalog
 from app.realtime import events
 from app.realtime.session import QwenRealtimeSession
 from app.ws import protocol
@@ -224,6 +225,10 @@ class RealtimeBridge:
         self._text_done = False  # diagnostics: has the response's text finished?
         self._announced_alerts: set[str] = set()  # threshold crossings already announced (de-dupe)
         self._pending_proactive: tuple[str, str] | None = None  # (signature, grounded facts) to speak
+        self._bg_tasks: set = set()  # off-loop background tasks (diagnostic agent)
+        self._diagnosis_inflight = False  # a diagnosis is currently running
+        self._diagnosis_done_sig: str | None = None  # last condition already diagnosed (de-dupe)
+        self._pending_diagnosis_text: str | None = None  # silent context line to inject when safe
         self._forge_recent_text = ""  # FORGE's current/last spoken text (to detect echo)
         self._spoke_over_forge = False  # the in-progress user turn began while FORGE was speaking
         self._forge_text_at_barge = ""  # FORGE's text when that user turn started
@@ -250,9 +255,9 @@ class RealtimeBridge:
 
         self._closing = True
         self._want_session.set()  # unblock a parked downstream so it can exit
-        for task in pending:
+        for task in (*pending, *self._bg_tasks):
             task.cancel()
-        await asyncio.gather(*pending, return_exceptions=True)
+        await asyncio.gather(*pending, *self._bg_tasks, return_exceptions=True)
         for task in done:
             exc = task.exception()
             if exc and not isinstance(exc, (WebSocketDisconnect, asyncio.CancelledError)):
@@ -469,6 +474,7 @@ class RealtimeBridge:
                 # the next user turn (adjacent to "what's on screen?"), not buried up-context.
                 await self._inject_ui_state(force=True)
                 await self._maybe_speak_proactive()  # autopilot: speak a queued safety alert
+                await self._flush_pending_diagnosis()  # autopilot: silently load a ready diagnosis
         elif isinstance(evt, events.SessionUpdated):
             has_tools = bool(evt.session.get("tools"))
             logger.info("session.updated echo: tools_supported=%s keys=%s", has_tools, sorted(evt.session)[:12])
@@ -532,6 +538,10 @@ class RealtimeBridge:
         await self._safe_send_json(protocol.transcript("user", text=text, final=True))
         self._last_user_text = text
         self._last_highlight = None  # re-arm auto-highlight for this new turn
+        if "diagnos" in text.lower() and self.orch.state.diagnosis is None:
+            # On-demand: generate a diagnosis if none exists yet (open fault + telemetry are
+            # always grounded inputs). If one exists, FORGE just reads the injected context.
+            self._schedule_diagnosis("user_request", "manual", self._diagnosis_inputs([]))
         for name, args in intent.infer_tools(text, self._intent_ctx):
             await self._apply_tool(name, args)
             if name == "highlight_component":  # shared guard: don't re-pulse when FORGE echoes it
@@ -573,6 +583,7 @@ class RealtimeBridge:
             outcome = ToolOutcome(model_output={"error": "tool_failed", "message": f"{name} failed: {exc}"})
         self._outcome_cache[key] = outcome
         self._queue_proactive_alert(name, outcome)  # autopilot: queue a safety alert on a threshold crossing
+        self._maybe_schedule_diagnosis(name, outcome)  # autopilot: background diagnosis on a crossing
         if name == "hide_panel" and outcome.model_output.get("not_shown"):
             # Decisive diagnostic: was the target genuinely absent (tracking gap) or did the
             # model just deny a panel that IS up (confabulation)?
@@ -657,6 +668,79 @@ class RealtimeBridge:
             await self.session.create_response()
         except Exception as exc:  # noqa: BLE001
             logger.debug("proactive alert speak: %r", exc)
+
+    # ── off-loop background diagnostic agent ──────────────────────────────────
+    def _diagnosis_inputs(self, breaches: list[dict]) -> dict:
+        """Assemble GROUNDED inputs for the diagnostic agent (no model-invented values)."""
+        state = self.orch.state
+        machine = catalog.machine(state.asset_id) or {}
+        nameplate = machine.get("nameplate", {})
+        latest = state.measurements[-1] if state.measurements else None
+        return {
+            "machine": {k: nameplate.get(k) for k in ("model", "machine_class", "control")},
+            "threshold_breaches": [b.get("message") for b in breaches],
+            "latest_measurement": latest,
+            "recent_measurements": state.measurements[-5:],
+            "open_faults": machine.get("open_faults", []),
+            "recent_activity": [e.get("note") for e in state.work_log[-5:]],
+        }
+
+    def _maybe_schedule_diagnosis(self, name: str, outcome) -> None:
+        """On a threshold crossing, kick off ONE background diagnosis (de-duped by signature)."""
+        mo = outcome.model_output if outcome is not None else {}
+        if name != "record_measurement" or mo.get("status") not in ("warn", "alert"):
+            return
+        breaches = mo.get("breaches") or []
+        if not breaches:
+            return
+        signature = ";".join(sorted(f"{b.get('channel')}:{b.get('level')}" for b in breaches))
+        self._schedule_diagnosis(f"threshold {signature}", signature, self._diagnosis_inputs(breaches))
+
+    def _schedule_diagnosis(self, reason: str, signature: str, inputs: dict) -> None:
+        if self._diagnosis_inflight or signature == self._diagnosis_done_sig:
+            return  # one at a time; don't re-diagnose an unchanged condition
+        self._diagnosis_inflight = True
+        logger.info("diagnosis requested: %s", reason)
+        task = asyncio.create_task(self._run_diagnosis(signature, inputs), name="forge-diagnosis")
+        self._bg_tasks.add(task)
+        task.add_done_callback(self._bg_tasks.discard)
+
+    async def _run_diagnosis(self, signature: str, inputs: dict) -> None:
+        from app.agents import diagnostic
+
+        try:
+            result = await diagnostic.request_diagnosis(inputs, self.settings)
+        finally:
+            self._diagnosis_inflight = False
+        if not result:
+            logger.info("diagnosis unavailable (failed/timeout) — degrading gracefully")
+            return
+        self._diagnosis_done_sig = signature
+        self.orch.state.diagnosis = result
+        logger.info("diagnosis ready: %s (%s)", result.get("root_cause"), result.get("confidence"))
+        # Surface visually on the existing machine-data panel (reuse, no new panel type).
+        self.orch.state.visible_panels.add("machine_data")
+        await self._safe_send_json(protocol.panel("machine_data", {"view": "diagnosis", **result}))
+        # Queue a SILENT context line so FORGE can read it aloud when asked (no auto-interrupt).
+        self._pending_diagnosis_text = (
+            f"BACKGROUND DIAGNOSIS (ready, do not announce unprompted; read it only if the "
+            f"technician asks): root cause — {result.get('root_cause')}; confidence "
+            f"{result.get('confidence')}; recommended — {result.get('recommended_action')}; "
+            f"evidence — {result.get('evidence')}."
+        )
+
+    async def _flush_pending_diagnosis(self) -> None:
+        """Inject the ready diagnosis into context at a safe point (silent — no spoken turn)."""
+        if self._pending_diagnosis_text is None or not self.session.connected:
+            return
+        if self._response_active or getattr(self.session, "_buffer_has_audio", False):
+            return  # not safe yet — try again on the next ResponseDone
+        text = self._pending_diagnosis_text
+        self._pending_diagnosis_text = None
+        try:
+            await self.session.inject_message(text, role="system")
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("inject diagnosis context: %r", exc)
 
     # ── helpers ──────────────────────────────────────────────────────────────
     def _remaining(self) -> int:

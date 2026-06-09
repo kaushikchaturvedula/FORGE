@@ -19,6 +19,11 @@ _WS_ENDPOINTS = {
     "cn": "wss://dashscope.aliyuncs.com/api-ws/v1/realtime",
 }
 _DASHSCOPE_REGION = {"intl": "ap-southeast-1 (Singapore)", "cn": "cn-beijing"}
+# OpenAI-compatible REST base per region (for the off-loop diagnostic text agent).
+_COMPAT_ENDPOINTS = {
+    "intl": "https://dashscope-intl.aliyuncs.com/compatible-mode/v1",
+    "cn": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+}
 
 
 class Settings(BaseSettings):
@@ -40,6 +45,12 @@ class Settings(BaseSettings):
 
     # Turn detection: "server_vad" (broadly supported) or "semantic_vad" (qwen3.5+).
     vad_type: str = Field(default="server_vad", alias="FORGE_VAD_TYPE")
+
+    # ── Background diagnostic agent (off the realtime loop) ───────────────────
+    # A SEPARATE Qwen TEXT model (OpenAI-compatible chat-completions) that reasons over the
+    # grounded telemetry/fault context to produce a structured diagnosis. Not the voice model.
+    diagnostic_model: str = Field(default="qwen-plus", alias="FORGE_DIAGNOSTIC_MODEL")
+    diagnostic_timeout_s: float = Field(default=20.0, alias="FORGE_DIAGNOSTIC_TIMEOUT_S")
 
     # Realtime tool registration shape: "flat" ({type,name,description,parameters},
     # OpenAI-Realtime style) or "nested" ({type,function:{...}}). The session.updated echo
@@ -86,6 +97,11 @@ class Settings(BaseSettings):
     @property
     def dashscope_region(self) -> str:
         return _DASHSCOPE_REGION.get(self.region, self.region)
+
+    @property
+    def compat_base_url(self) -> str:
+        """OpenAI-compatible REST base for the diagnostic text agent (same key, by region)."""
+        return _COMPAT_ENDPOINTS.get(self.region, _COMPAT_ENDPOINTS["intl"])
 
     @property
     def realtime_configured(self) -> bool:

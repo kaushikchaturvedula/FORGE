@@ -104,6 +104,10 @@ def bridge():
     b._pending_response = False
     b._announced_alerts = set()
     b._pending_proactive = None
+    b._bg_tasks = set()
+    b._diagnosis_inflight = False
+    b._diagnosis_done_sig = None
+    b._pending_diagnosis_text = None
     b._forge_recent_text = ""
     b._spoke_over_forge = False
     b._forge_text_at_barge = ""
@@ -487,6 +491,76 @@ async def test_proactive_alert_deferred_while_user_speaking(bridge):
     bridge.session._buffer_has_audio = False            # user stopped
     await _drain_to_speak(bridge)
     assert bridge.session.responses == 1               # fires at the next safe moment
+
+
+# ── off-loop background diagnostic agent ─────────────────────────────────────
+async def test_breach_schedules_diagnosis_with_grounded_inputs(bridge, monkeypatch):
+    captured = {}
+    monkeypatch.setattr(bridge, "_schedule_diagnosis", lambda reason, sig, inputs: captured.update(
+        reason=reason, sig=sig, inputs=inputs))
+    await bridge._apply_tool("record_measurement", {"type": "spindle_torque", "value": 65, "unit": "Nm"})
+    assert captured, "a breach must schedule a diagnosis"
+    assert any("65" in str(b) for b in captured["inputs"]["threshold_breaches"])      # real numbers
+    assert any(f.get("fault_id") == "F-2218" for f in captured["inputs"]["open_faults"])  # real fault
+
+
+async def test_no_diagnosis_below_threshold(bridge, monkeypatch):
+    called = []
+    monkeypatch.setattr(bridge, "_schedule_diagnosis", lambda *a: called.append(a))
+    await bridge._apply_tool("record_measurement", {"type": "spindle_torque", "value": 30, "unit": "Nm"})
+    assert called == []
+
+
+def test_schedule_diagnosis_dedupes(bridge):
+    bridge._diagnosis_inflight = True                 # one already running -> skip
+    bridge._schedule_diagnosis("r", "sig", {})
+    assert not bridge._bg_tasks
+    bridge._diagnosis_inflight = False
+    bridge._diagnosis_done_sig = "sig"                # this condition already diagnosed -> skip
+    bridge._schedule_diagnosis("r", "sig", {})
+    assert not bridge._bg_tasks
+
+
+async def test_run_diagnosis_success_stores_and_pushes(bridge, monkeypatch):
+    from app.agents import diagnostic
+
+    async def fake(inputs, settings):
+        return {"root_cause": "drawbar unclamp delay", "confidence": "high",
+                "recommended_action": "inspect the unclamp cylinder", "evidence": "F-2218; torque 65"}
+
+    monkeypatch.setattr(diagnostic, "request_diagnosis", fake)
+    bridge._diagnosis_inflight = True
+    await bridge._run_diagnosis("sig1", {"x": 1})
+    assert bridge.orch.state.diagnosis["root_cause"] == "drawbar unclamp delay"
+    assert bridge._diagnosis_done_sig == "sig1" and bridge._diagnosis_inflight is False
+    assert "machine_data" in bridge.orch.state.visible_panels
+    assert any(m["type"] == "panel" and m["panel"] == "machine_data" and m["data"].get("view") == "diagnosis"
+               for m in bridge.ws.json_sent)
+    assert bridge._pending_diagnosis_text and "drawbar" in bridge._pending_diagnosis_text
+
+
+async def test_run_diagnosis_failure_degrades(bridge, monkeypatch):
+    from app.agents import diagnostic
+
+    async def fake(inputs, settings):
+        return None  # network/timeout/parse failure
+
+    monkeypatch.setattr(diagnostic, "request_diagnosis", fake)
+    bridge._diagnosis_inflight = True
+    await bridge._run_diagnosis("sig1", {})
+    assert bridge.orch.state.diagnosis is None       # no crash, no diagnosis
+    assert bridge._diagnosis_inflight is False        # flag always cleared
+    assert not any(m.get("panel") == "machine_data" for m in bridge.ws.json_sent if m["type"] == "panel")
+
+
+async def test_pending_diagnosis_injected_silently(bridge):
+    bridge._pending_diagnosis_text = "BACKGROUND DIAGNOSIS: root cause — x."
+    bridge.session.injected = []
+    bridge.session.responses = 0
+    await bridge._flush_pending_diagnosis()
+    assert any("BACKGROUND DIAGNOSIS" in t for _r, t in bridge.session.injected)
+    assert bridge.session.responses == 0              # silent — never auto-speaks
+    assert bridge._pending_diagnosis_text is None
 
 
 # ── screen-awareness: SCREEN STATE injected adjacent to every turn ───────────

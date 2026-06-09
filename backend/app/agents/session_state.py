@@ -28,6 +28,7 @@ class SessionState:
     photos: list[dict[str, Any]] = field(default_factory=list)
     active_procedure: dict[str, Any] | None = None
     active_safety: dict[str, Any] | None = None
+    diagnosis: dict[str, Any] | None = None  # latest background-agent diagnosis (for readback)
     active_agent: str = "orchestrator"
     vision_active: bool = False
     visible_panels: set[str] = field(default_factory=set)
