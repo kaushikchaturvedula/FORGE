@@ -7,8 +7,8 @@ on Alibaba Cloud.
 ## Setup (before recording)
 
 1. Start the backend (real `DASHSCOPE_API_KEY` in `backend/.env`) and the frontend.
-2. In **OBS Studio**, add the **CC BY 3.0 Wikimedia clip**
-   (`A_milling_machine_cutting_a_plug.ogv`) as a looping media source, **Start Virtual
+2. In **OBS Studio**, add the **CC BY 3.0 CNC clip** (CNCBUL, YouTube —
+   `datasets/cnc2.mp4`) as a looping media source, **Start Virtual
    Camera**. In the Field Vision panel's device picker, select **OBS Virtual Camera**.
 3. Open the console full-screen (dark theme). Have the **agent routing chips**,
    **transcript**, and **tool metrics** visible in the HUD rail.

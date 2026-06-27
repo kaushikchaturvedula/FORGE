@@ -23,10 +23,7 @@ UCI Machine Learning Repository. https://doi.org/10.24432/C5HS5C — licensed CC
 
 ## Operating video — the "live feed" (via OBS Virtual Camera)
 
-| Source | Link | License | Use in FORGE |
-|---|---|---|---|
-| **Wikimedia: "A milling machine cutting a plug"** | [commons.wikimedia.org](https://commons.wikimedia.org/wiki/File:A_milling_machine_cutting_a_plug.ogv) | **CC BY 3.0** | **The submission-safe clip.** Looped in OBS Studio and exposed to the browser as a webcam via OBS Virtual Camera, so it is the technician's "live feed" with no code changes. This is the only footage used in the submitted demo video. |
-| Local test clips (`datasets/cnc.mp4`, `cnc2.mp4`, `milling.mp4`) | — | **Not CC-confirmed — testing only** | Used only for local development of the vision pipeline. **Gitignored** (see `.gitignore`) and **never** included in the submitted demo or committed to the repo. |
+Operating video — "KAFO KA-24A CNC Vertical Machining Center - Year 2020" by CNCBUL Perman Machinery Investment Consultancy Ltd, from YouTube (https://www.youtube.com/watch?v=3L4-WhSYx9s), licensed CC BY 3.0 (https://creativecommons.org/licenses/by/3.0/). Used as a simulated live feed (cnc2.mp4) via OBS Virtual Camera. Modification: format-converted to mp4 only; no trimming, clipping, or content changes. Attribution: CNCBUL Perman Machinery Investment Consultancy Ltd.
 
 ---
 
@@ -60,11 +57,13 @@ UCI Machine Learning Repository. https://doi.org/10.24432/C5HS5C — licensed CC
 
 | Source | Link | License | Use in FORGE |
 |---|---|---|---|
-| **"CNC Milling Machine" 3D model** (`frontend/public/models/cnc_milling_machine.glb`, source OBJ in `datasets/cnc-milling-machine/`) | Sketchfab (model node id `Sketchfab_model`) — **⚠ confirm the exact author + license URL before publishing** | likely CC BY (Sketchfab default) — verify | Rendered with Three.js + GLTFLoader for whole-machine orientation (drag to orbit; voice `rotate_model` / `reset_view`). The GLB is a single fused mesh (no named sub-parts), so it is used for orientation only — not per-part highlighting. |
+| **"CNC Milling Machine" 3D model** (`frontend/public/models/cnc_milling_machine.glb`, source OBJ in `datasets/cnc-milling-machine/`) | [Sketchfab](https://sketchfab.com/3d-models/cnc-milling-machine-318e0c1f28fb4ac49c90e0bce947f786) by **ambivalentBear** | [CC BY 4.0](http://creativecommons.org/licenses/by/4.0/) | Rendered with Three.js + GLTFLoader for whole-machine orientation (drag to orbit; voice `rotate_model` / `reset_view`). The GLB is a single fused mesh (no named sub-parts), so it is used for orientation only — not per-part highlighting. |
 
-> **TODO before submission:** replace the placeholder above with the exact Sketchfab model
-> page URL, author name, and confirmed license (and add the attribution line the license
-> requires). The GLB ships in `frontend/public/models/`; the original OBJ + textures are in
+3D model — "CNC Milling Machine" by ambivalentBear, from Sketchfab (https://sketchfab.com/3d-models/cnc-milling-machine-318e0c1f28fb4ac49c90e0bce947f786), licensed CC BY 4.0 (http://creativecommons.org/licenses/by/4.0/). Attribution: ambivalentBear.
+
+Modification: model used in GLB (glTF binary) format; format conversion only — no geometry, material, or texture changes.
+
+> The GLB ships in `frontend/public/models/`; the original OBJ + textures are in
 > `datasets/cnc-milling-machine/` for provenance.
 
 ---
@@ -72,7 +71,7 @@ UCI Machine Learning Repository. https://doi.org/10.24432/C5HS5C — licensed CC
 ## Summary of licenses
 
 - **AI4I 2020 dataset** → CC BY 4.0 (bundled).
-- **Wikimedia milling clip** → CC BY 3.0 (submission feed).
+- **CNCBUL CNC clip (YouTube)** → CC BY 3.0 (simulated live feed, cnc2.mp4).
 - **Artisans Asylum wiki** → CC (reference).
 - **iFixit API** → CC BY-NC-SA (optional, cached, never live).
 - **Haas / Tormach manuals** → manufacturer docs (reference only).

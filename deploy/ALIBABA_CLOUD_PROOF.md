@@ -44,7 +44,7 @@ default idle timeout is 60 s). ECS gives full control of the proxy timeouts — 
 ## 3. Reproduce the deploy
 
 1. **OSS:** create bucket `forge-assets` (region e.g. `ap-southeast-1`); upload the
-   CC BY 3.0 Wikimedia CNC clip + schematics. (See [deploy/ecs/README.md](./ecs/README.md).)
+   CC BY 3.0 CNC clip (CNCBUL, YouTube) + schematics. (See [deploy/ecs/README.md](./ecs/README.md).)
 2. **ACR:** create a namespace; CI pushes `forge:latest` + `forge:<sha>`.
 3. **ECS:** provision an instance, install Docker + Compose, place
    `deploy/ecs/docker-compose.yml` + `nginx.conf` in `/opt/forge`, set the `.env`,

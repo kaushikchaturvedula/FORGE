@@ -15,7 +15,7 @@ Compute. This folder holds the runtime manifests.
 ```bash
 # Create a bucket (example region ap-southeast-1 / Singapore, matching the intl endpoint)
 ossutil mb oss://forge-assets --region ap-southeast-1
-# Upload the submission-safe CC BY 3.0 Wikimedia CNC clip + any large schematics
+# Upload the submission-safe CC BY 3.0 CNC clip (CNCBUL, YouTube) + any large schematics
 ossutil cp ./assets/milling-demo.ogv oss://forge-assets/video/
 ```
 At startup FORGE can pull these via `app.cloud.alibaba.download_object` (the `oss2` SDK).
