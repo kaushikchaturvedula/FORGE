@@ -11,7 +11,7 @@ aliyun-credentials*
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Testing-only video clips (NOT Creative-Commons confirmed — keep out of repo
-# and out of the submitted demo; submission uses the CC BY 3.0 Wikimedia clip).
+# and out of the submitted demo; submission uses the CC BY 3.0 CNCBUL YouTube clip (cnc2.mp4)).
 # ─────────────────────────────────────────────────────────────────────────────
 datasets/*.mp4
 datasets/*.mov
@@ -22,7 +22,7 @@ datasets/*.ogv
 *.mov
 *.mkv
 *.webm
-# Allow the submission-safe Wikimedia clip if explicitly placed here:
+# Allow the submission-safe CNCBUL YouTube clip (cnc2.mp4) if explicitly placed here:
 !docs/assets/*.ogv
 
 # ─────────────────────────────────────────────────────────────────────────────
