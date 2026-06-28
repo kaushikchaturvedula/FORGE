@@ -72,36 +72,56 @@ export function ModelPanel({ cmd }: { cmd: ModelCmd }) {
     };
     tick();
 
-    new GLTFLoader().load(
-      MODEL_URL,
-      (gltf) => {
-        const model = gltf.scene;
-        // Center + frame the model so it fills the view regardless of its native scale.
-        const box = new THREE.Box3().setFromObject(model);
-        const size = box.getSize(new THREE.Vector3());
-        const center = box.getCenter(new THREE.Vector3());
-        model.position.sub(center);
-        const maxDim = Math.max(size.x, size.y, size.z) || 1;
-        const dist = maxDim * 1.9;
-        camera.position.set(dist * 0.8, dist * 0.6, dist);
-        camera.lookAt(0, 0, 0);
-        controls.target.set(0, 0, 0);
-        controls.update();
-        scene.add(model);
-        modelRef.current = model;
-        homeRef.current = { pos: camera.position.clone(), rot: model.rotation.clone(), target: controls.target.clone() };
-        setStatus("");
-        setLoaded(true); // re-run the command effect so a command issued during load replays
-      },
-      undefined,
-      (err) => {
-        console.error("[FORGE] GLB load failed", err);
-        setStatus("3D model failed to load.");
-      },
-    );
+    let retryTimer: ReturnType<typeof setTimeout> | undefined;
+    let tries = 0;
+    const RETRY_DELAYS = [500, 1000, 2000]; // backoff before each retry; transient fail won't poison the session
+    const attemptLoad = () => {
+      new GLTFLoader().load(
+        MODEL_URL,
+        (gltf) => {
+          const model = gltf.scene;
+          // Center + frame the model so it fills the view regardless of its native scale.
+          const box = new THREE.Box3().setFromObject(model);
+          const size = box.getSize(new THREE.Vector3());
+          const center = box.getCenter(new THREE.Vector3());
+          model.position.sub(center);
+          const maxDim = Math.max(size.x, size.y, size.z) || 1;
+          const dist = maxDim * 1.9;
+          camera.position.set(dist * 0.8, dist * 0.6, dist);
+          camera.lookAt(0, 0, 0);
+          controls.target.set(0, 0, 0);
+          controls.update();
+          // Wrap the centered model in a PIVOT group whose origin = the world origin (= the
+          // model's visual center). We rotate the PIVOT, so the model spins IN PLACE regardless
+          // of gltf.scene's position offset or any Sketchfab Z-up→Y-up child-correction node
+          // (rotating gltf.scene directly orbited it off-center — the previous bug).
+          const pivot = new THREE.Group();
+          pivot.add(model);
+          scene.add(pivot);
+          modelRef.current = pivot;
+          homeRef.current = { pos: camera.position.clone(), rot: pivot.rotation.clone(), target: controls.target.clone() };
+          setStatus("");
+          setLoaded(true); // re-run the command effect so a command issued during load replays
+        },
+        undefined,
+        (err) => {
+          if (tries < RETRY_DELAYS.length) {
+            const delay = RETRY_DELAYS[tries];
+            tries += 1;
+            setStatus("Loading 3D model… (retrying)");
+            retryTimer = setTimeout(attemptLoad, delay);
+          } else {
+            console.error("[FORGE] GLB load failed after retries", err);
+            setStatus("3D model failed to load.");
+          }
+        },
+      );
+    };
+    attemptLoad();
 
     return () => {
       cancelAnimationFrame(raf);
+      if (retryTimer) clearTimeout(retryTimer);
       ro.disconnect();
       controls.dispose();
       renderer.dispose();

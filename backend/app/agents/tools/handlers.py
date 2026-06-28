@@ -435,7 +435,7 @@ def rotate_model(state: SessionState, args: dict) -> ToolResult:
     if axis not in ("x", "y", "z"):
         axis = "y"
     state.visible_panels.add("model")
-    state.model_rotation[axis] = (state.model_rotation.get(axis, 0) + degrees) % 360
+    state.model_rotation[axis] = ((state.model_rotation.get(axis, 0) + degrees) % 360 + 360) % 360
     return ToolResult(
         output={"rotated": degrees, "axis": axis, "rotation": dict(state.model_rotation)},
         # Send the resulting ABSOLUTE orientation (single source of truth): the frontend SETS the
@@ -455,7 +455,7 @@ def set_rotation(state: SessionState, args: dict) -> ToolResult:
     if axis not in ("x", "y", "z"):
         axis = "y"
     state.visible_panels.add("model")
-    state.model_rotation[axis] = degrees % 360
+    state.model_rotation[axis] = ((degrees % 360) + 360) % 360
     return ToolResult(
         output={"set_to": degrees, "axis": axis, "rotation": dict(state.model_rotation)},
         control={"action": "set_rotation", "rotation": dict(state.model_rotation)},
