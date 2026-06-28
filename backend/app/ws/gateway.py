@@ -35,6 +35,7 @@ from starlette.websockets import WebSocket, WebSocketDisconnect
 
 from app.agents import intent, workflows
 from app.agents.orchestrator import Orchestrator
+from app.agents.tools.handlers import resolved_rotation_degrees
 from app.agents.session_state import SessionState
 from app.config import Settings, get_settings
 from app.data.catalog import catalog
@@ -166,6 +167,10 @@ def build_ui_state(state: SessionState) -> str:
         elif p == "procedure":
             title = (state.active_procedure or state.active_safety or {}).get("title")
             parts.append(f"a procedure/checklist{f' ({title})' if title else ''}")
+        elif p == "model":
+            r = state.model_rotation
+            parts.append(f"the 3D model (rotation: X {int(r.get('x', 0))}°, Y {int(r.get('y', 0))}°, "
+                         f"Z {int(r.get('z', 0))}°)")
         elif p in _PANEL_PHRASE:
             parts.append(_PANEL_PHRASE[p])
     return "showing " + ", ".join(parts) + "." if parts else "nothing is displayed."
@@ -585,9 +590,11 @@ class RealtimeBridge:
                                                         "Say 'start the procedure' to walk through it."})
         key = f"{name}:{json.dumps(args, sort_keys=True)}"
         if name in _RELATIVE_TOOLS:
-            # Scope to this user turn: native+intent of one utterance still dedup, but a
-            # separate "rotate by 30" utterance (new nonce) accumulates instead of being lost.
-            key = f"{key}:turn{self._turn_nonce}"
+            # Canonicalize to the resolved signed delta (so {-90} and {90,clockwise} dedup as the
+            # same rotation), and scope to this user turn: native+intent of one utterance still
+            # dedup, but a separate "rotate by 30" utterance (new nonce) accumulates.
+            canon = {"axis": str(args.get("axis", "y")).lower(), "degrees": resolved_rotation_degrees(args)}
+            key = f"{name}:{json.dumps(canon, sort_keys=True)}:turn{self._turn_nonce}"
         if self.dedup.is_duplicate(key, time.monotonic()):
             logger.info("deduped tool call %s", name)
             return self._outcome_cache.get(key)

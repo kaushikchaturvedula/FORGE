@@ -232,10 +232,17 @@ TOOLS: dict[str, dict[str, Any]] = {
     "rotate_model": _fn(
         "rotate_model",
         "Call to rotate the 3D model by a RELATIVE amount on an axis (e.g. 'rotate another 30', "
-        "'turn it 30 more'). For a specific target angle use set_rotation instead.",
+        "'turn it 30 more'; default axis is y if unspecified). When the tech states a direction, "
+        "pass it: counterclockwise is positive, clockwise is negative. For a specific target "
+        "angle use set_rotation instead.",
         {
             "degrees": {"type": "number", "description": "Degrees to rotate (e.g. 30, 90)."},
             "axis": {"type": "string", "enum": sorted(wl.ROTATE_AXES), "description": "Axis to rotate on (default y)."},
+            "direction": {
+                "type": "string",
+                "enum": ["clockwise", "counterclockwise"],
+                "description": "Spoken rotation direction, if stated. Counterclockwise = positive, clockwise = negative.",
+            },
         },
         ["degrees"],
     ),

@@ -400,12 +400,37 @@ def hide_panel(state: SessionState, args: dict) -> ToolResult:
 
 
 # ── 3D model viewer ──────────────────────────────────────────────────────────
-def rotate_model(state: SessionState, args: dict) -> ToolResult:
-    """Rotate the 3D model (whole-model orientation; the GLB is a fused mesh)."""
+def _normalize_direction(value) -> str | None:
+    """Map spoken/synonym direction words to the canonical pair, or None if not given."""
+    d = str(value or "").lower().strip().replace("-", "").replace(" ", "")
+    if d in ("counterclockwise", "anticlockwise", "ccw"):
+        return "counterclockwise"
+    if d in ("clockwise", "cw"):
+        return "clockwise"
+    return None
+
+
+def resolved_rotation_degrees(args: dict) -> int:
+    """The SIGNED delta a rotate_model call applies, after direction (right-hand rule):
+    counterclockwise = +|degrees|, clockwise = -|degrees|. With NO direction the passed sign is
+    used verbatim (so existing positive-degree calls — and any sign the model sends — are
+    unchanged)."""
     try:
         degrees = int(float(args.get("degrees", 30)))
     except (TypeError, ValueError):
         degrees = 30
+    direction = _normalize_direction(args.get("direction"))
+    if direction == "counterclockwise":
+        return abs(degrees)
+    if direction == "clockwise":
+        return -abs(degrees)
+    return degrees
+
+
+def rotate_model(state: SessionState, args: dict) -> ToolResult:
+    """Rotate the 3D model RELATIVELY (whole-model orientation; the GLB is a fused mesh).
+    Counterclockwise is positive, clockwise negative when a direction is spoken."""
+    degrees = resolved_rotation_degrees(args)
     axis = str(args.get("axis", "y")).lower()
     if axis not in ("x", "y", "z"):
         axis = "y"

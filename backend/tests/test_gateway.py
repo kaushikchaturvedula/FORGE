@@ -540,6 +540,60 @@ def test_intent_parses_degrees_without_the_word_degree():
     assert ("rotate_model", {"degrees": 45, "axis": "z"}) in follow
 
 
+def test_screen_state_includes_live_rotation():
+    # BUG 1: the injected SCREEN STATE must carry the current angles (all axes, even 0).
+    from app.ws.gateway import build_ui_state
+    from app.grounding.callbacks import execute_tool
+    from app.agents.session_state import SessionState
+
+    s = SessionState()
+    execute_tool(s, "set_rotation", {"degrees": 90, "axis": "x"})
+    execute_tool(s, "rotate_model", {"degrees": 30})  # no axis -> y (the reported case)
+    out = build_ui_state(s)
+    assert "the 3D model" in out and "X 90" in out and "Y 30" in out and "Z 0" in out
+    execute_tool(s, "reset_view", {})
+    out2 = build_ui_state(s)
+    assert "X 0" in out2 and "Y 0" in out2 and "Z 0" in out2
+
+
+def test_rotation_direction_sign_logic():
+    # BUG 3: CCW=+, CW=-; no direction respects the passed sign (non-breaking).
+    from app.agents.tools.handlers import resolved_rotation_degrees, rotate_model
+    from app.agents.session_state import SessionState
+
+    assert resolved_rotation_degrees({"degrees": 30}) == 30                                     # (a) no dir
+    assert resolved_rotation_degrees({"degrees": 30, "direction": "counterclockwise"}) == 30    # (b)
+    assert resolved_rotation_degrees({"degrees": 30, "direction": "clockwise"}) == -30          # (c)
+    assert resolved_rotation_degrees({"degrees": -30}) == -30                                   # (d) explicit sign kept
+    assert resolved_rotation_degrees({"degrees": 30, "direction": "ccw"}) == 30                 # synonyms
+    assert resolved_rotation_degrees({"degrees": 30, "direction": "cw"}) == -30
+    s = SessionState()
+    rotate_model(s, {"degrees": 30, "direction": "clockwise"})
+    assert s.model_rotation["y"] == 330  # (0 - 30) % 360 — the −30°/330° normalization
+
+
+def test_intent_parses_direction_for_relative_rotation():
+    from app.agents import intent
+
+    rot = [a for n, a in intent.infer_tools("rotate 90 clockwise on y", {}) if n == "rotate_model"]
+    assert rot and rot[0] == {"degrees": 90, "axis": "y", "direction": "clockwise"}
+    # counterclockwise wins over its "clockwise" substring
+    ccw = [a for n, a in intent.infer_tools("rotate 45 counterclockwise on x", {}) if n == "rotate_model"]
+    assert ccw and ccw[0]["direction"] == "counterclockwise"
+    # absolute "rotate to" carries NO direction (set_rotation)
+    ab = intent.infer_tools("rotate to 90 clockwise on x", {})
+    assert all("direction" not in a for n, a in ab)
+
+
+async def test_relative_dedup_is_canonical_across_direction(bridge):
+    # native {90, clockwise} (resolves -90) and a pre-signed {-90} in the same turn are the SAME
+    # rotation -> deduped -> applied once (not -180).
+    bridge._turn_nonce = 1
+    await bridge._apply_tool("rotate_model", {"degrees": 90, "axis": "y", "direction": "clockwise"})
+    await bridge._apply_tool("rotate_model", {"degrees": -90, "axis": "y"})
+    assert bridge.orch.state.model_rotation["y"] == 270  # one -90 -> 270, not -180
+
+
 # ── autonomous workflow chaining ─────────────────────────────────────────────
 async def test_workflow_runs_steps_in_order_and_pauses_at_gate(bridge, monkeypatch):
     calls = []

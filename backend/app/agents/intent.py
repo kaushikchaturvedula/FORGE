@@ -105,7 +105,14 @@ def infer_tools(transcript: str, ctx: dict | None = None) -> list[tuple[str, dic
         ctx["rotate_deg"], ctx["rotate_axis"] = degrees, ax
         # "rotate TO 90" / "set it to 90" / "make it 90" = absolute; otherwise relative.
         absolute = _has(t, "rotate to", "rotate it to", "set it to", "set the rotation", "make it", "orient to", "go to")
-        calls.append(("set_rotation" if absolute else "rotate_model", {"degrees": degrees, "axis": ax}))
+        rot_args = {"degrees": degrees, "axis": ax}
+        if not absolute:  # direction is meaningful only for a RELATIVE rotation
+            # Check counterclockwise FIRST — it contains the substring "clockwise".
+            if _has(t, "counterclockwise", "counter-clockwise", "counter clockwise", "anticlockwise", "anti-clockwise", "ccw"):
+                rot_args["direction"] = "counterclockwise"
+            elif _has(t, "clockwise", "cw"):
+                rot_args["direction"] = "clockwise"
+        calls.append(("set_rotation" if absolute else "rotate_model", rot_args))
         model_cmd = True
     if _has(t, "reset the view", "reset view", "reset the model", "default view", "recenter",
             "re-center", "reset the camera", "center the model"):
