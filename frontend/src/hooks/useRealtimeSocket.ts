@@ -13,6 +13,7 @@ import {
 
 export interface Line { id: number; role: "user" | "assistant"; text: string }
 export interface ToolTick { name: string; status: string; ts: number }
+export type Rot = { x: number; y: number; z: number };  // absolute model rotation in degrees
 
 interface State {
   conn: ConnState;
@@ -30,7 +31,7 @@ interface State {
   visionActive: boolean;
   recentTools: ToolTick[];
   error: string | null;
-  modelCmd: { action: "rotate" | "set" | "reset" | "none"; degrees?: number; axis?: "x" | "y" | "z"; seq: number };
+  modelCmd: { action: "set_abs" | "reset" | "none"; rotation?: Rot; seq: number };
   highlight: { component: string; svg_id: string; label: string; seq: number } | null;
   annotate: { label: string; region: string; seq: number } | null;
   assetLabel: string | null;
@@ -144,20 +145,21 @@ function applyControl(s: State, action: string, payload: Record<string, unknown>
     }
     case "dismiss_alert":
       return { ...s, alerts: [] };
+    // rotate_model / set_rotation carry the resulting ABSOLUTE rotation {x,y,z} — the mesh is SET
+    // to it (single source of truth), so a deduped/missed control can't drift the render.
     case "rotate_model":
-      return {
-        ...s,
-        visible: { ...s.visible, model: true },
-        modelCmd: { action: "rotate", degrees: Number(payload.degrees) || 30, axis: (payload.axis as "x" | "y" | "z") || "y", seq: s.modelCmd.seq + 1 },
-      };
     case "set_rotation":
       return {
         ...s,
         visible: { ...s.visible, model: true },
-        modelCmd: { action: "set", degrees: Number(payload.degrees) || 0, axis: (payload.axis as "x" | "y" | "z") || "y", seq: s.modelCmd.seq + 1 },
+        modelCmd: { action: "set_abs", rotation: (payload.rotation as Rot) || { x: 0, y: 0, z: 0 }, seq: s.modelCmd.seq + 1 },
       };
     case "reset_view":
-      return { ...s, visible: { ...s.visible, model: true }, modelCmd: { action: "reset", seq: s.modelCmd.seq + 1 } };
+      return {
+        ...s,
+        visible: { ...s.visible, model: true },
+        modelCmd: { action: "reset", rotation: (payload.rotation as Rot) || { x: 0, y: 0, z: 0 }, seq: s.modelCmd.seq + 1 },
+      };
     case "highlight":
       return {
         ...s,

@@ -192,11 +192,12 @@ async def test_highlight_whole_machine_part_uses_overview(bridge):
 
 async def test_rotate_and_set_rotation_emit_controls(bridge):
     await bridge._apply_tool("rotate_model", {"degrees": 90, "axis": "x"})
-    assert any(m.get("action") == "rotate_model" and m["degrees"] == 90 and m["axis"] == "x"
+    assert any(m.get("action") == "rotate_model" and m["rotation"] == {"x": 90, "y": 0, "z": 0}
                for m in bridge.ws.json_sent if m["type"] == "control")
     bridge.ws.json_sent.clear()
     await bridge._apply_tool("set_rotation", {"degrees": 90, "axis": "x"})
-    assert any(m.get("action") == "set_rotation" and m["degrees"] == 90 for m in bridge.ws.json_sent if m["type"] == "control")
+    assert any(m.get("action") == "set_rotation" and m["rotation"] == {"x": 90, "y": 0, "z": 0}
+               for m in bridge.ws.json_sent if m["type"] == "control")
 
 
 async def test_unknown_highlight_is_grounded_out(bridge):
@@ -526,18 +527,29 @@ async def test_relative_rotation_dedup_is_per_turn(bridge):
     assert bridge.orch.state.model_rotation["x"] == 60  # NOT deduped across turns
 
 
-def test_intent_parses_degrees_without_the_word_degree():
-    # BUG 2 root cause: "rotate by 90 on y" must yield 90, not a stale ctx value.
-    from app.agents import intent
+async def test_native_only_no_y_contamination(bridge):
+    # BUG A: the utterance-2 repro. The intent must NOT rotate ("ninety" is a word the keyword
+    # parser can't read; it used to reuse a stale 30 and contaminate Y). Only the native call
+    # applies -> Y90, not 120.
+    bridge.orch.state.model_rotation = {"x": 30, "y": 0, "z": 0}
+    await bridge._on_user_transcript("rotate by ninety counterclockwise on y")
+    assert bridge.orch.state.model_rotation == {"x": 30, "y": 0, "z": 0}  # intent applied no rotation
+    await bridge._apply_tool("rotate_model", {"degrees": 90, "axis": "y", "direction": "counterclockwise"})
+    assert bridge.orch.state.model_rotation == {"x": 30, "y": 90, "z": 0}  # Y90, NOT 120
 
-    ctx = {}
-    intent.infer_tools("rotate by 30 degrees on x", ctx)      # seeds ctx rotate_deg=30
-    calls = intent.infer_tools("rotate by 90 on y", ctx)       # no word "degree"
-    rot = [a for n, a in calls if n == "rotate_model"]
-    assert rot and rot[0] == {"degrees": 90, "axis": "y"}      # 90 (parsed), NOT stale 30
-    # a bare axis follow-up still reuses the remembered amount
-    follow = intent.infer_tools("on the z axis", {"rotate_deg": 45, "rotate_axis": "x"})
-    assert ("rotate_model", {"degrees": 45, "axis": "z"}) in follow
+
+def test_rotation_controls_carry_absolute_rotation():
+    # BUG B: every rotation control sends the resulting ABSOLUTE {x,y,z} (frontend SETS to it).
+    from app.grounding.callbacks import execute_tool
+    from app.agents.session_state import SessionState
+
+    s = SessionState()
+    assert execute_tool(s, "set_rotation", {"degrees": 30, "axis": "x"}).control == \
+        {"action": "set_rotation", "rotation": {"x": 30, "y": 0, "z": 0}}
+    assert execute_tool(s, "rotate_model", {"degrees": 90, "axis": "y", "direction": "counterclockwise"}).control == \
+        {"action": "rotate_model", "rotation": {"x": 30, "y": 90, "z": 0}}
+    assert execute_tool(s, "reset_view", {}).control == \
+        {"action": "reset_view", "rotation": {"x": 0, "y": 0, "z": 0}}
 
 
 def test_screen_state_includes_live_rotation():
@@ -570,19 +582,6 @@ def test_rotation_direction_sign_logic():
     s = SessionState()
     rotate_model(s, {"degrees": 30, "direction": "clockwise"})
     assert s.model_rotation["y"] == 330  # (0 - 30) % 360 — the −30°/330° normalization
-
-
-def test_intent_parses_direction_for_relative_rotation():
-    from app.agents import intent
-
-    rot = [a for n, a in intent.infer_tools("rotate 90 clockwise on y", {}) if n == "rotate_model"]
-    assert rot and rot[0] == {"degrees": 90, "axis": "y", "direction": "clockwise"}
-    # counterclockwise wins over its "clockwise" substring
-    ccw = [a for n, a in intent.infer_tools("rotate 45 counterclockwise on x", {}) if n == "rotate_model"]
-    assert ccw and ccw[0]["direction"] == "counterclockwise"
-    # absolute "rotate to" carries NO direction (set_rotation)
-    ab = intent.infer_tools("rotate to 90 clockwise on x", {})
-    assert all("direction" not in a for n, a in ab)
 
 
 async def test_relative_dedup_is_canonical_across_direction(bridge):

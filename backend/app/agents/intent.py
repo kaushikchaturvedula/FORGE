@@ -79,48 +79,20 @@ def infer_tools(transcript: str, ctx: dict | None = None) -> list[tuple[str, dic
     if _has(t, *_SWITCH_PHRASES):
         calls.append(("hide_panel", {"panel": "machine_data"}))
 
-    # ── 3D model: show / rotate (+context-carry) / reset ──────────────────────
-    model_cmd = False
-    deg_match = re.search(r"(-?\d+)\s*degree", t)
-    axis = next((a for a in ("x", "y", "z")
-                 if re.search(rf"\b{a}[\s-]*axis\b", t) or _has(t, f"on {a}", f"the {a} axis")), None)
-    # A rotate verb only counts as a 3D command with a model cue (avoids "turn it off",
-    # "spin it up to speed", "turn the spindle by hand").
+    # ── 3D model: REVEAL the panel only. The rotation/reset itself is NATIVE-ONLY (the realtime
+    # model's function call is the single authoritative source) — the keyword fallback used to
+    # also emit rotate_model/set_rotation and, when it mis-parsed a spoken number ("ninety") or
+    # reused a stale magnitude, it diverged from the native call and double-applied. So here we
+    # only bring the panel up; we never apply a rotation.
     rotate_verb = _has(t, "rotate", "spin", "turn")
-    rotate_triggered = (rotate_verb and ("model" in t or deg_match is not None or axis is not None)) \
-        or _has(t, "spin the model", "turn the model", "rotate the model")
-    # A bare follow-up like "on the x axis" must be ESSENTIALLY just an axis directive
-    # (anchored to end), so "the x axis travel is 560" doesn't trigger a rotation.
-    axis_followup = bool(re.match(r"^\s*(on |do |now |and |make it |use )?(the )?[xyz][\s-]*axis\.?\s*$", t)) and ctx.get("rotate_deg")
-    if rotate_triggered or (axis_followup and not rotate_triggered):
-        # Parse the rotation amount: prefer "N degrees", else the integer in the command
-        # ("rotate by 90 on y" -> 90 — NOT a stale ctx value), else (a bare axis follow-up
-        # like "on the x axis") reuse the remembered amount.
-        if deg_match:
-            degrees = int(deg_match.group(1))
-        else:
-            num = re.search(r"-?\d+", t)
-            degrees = int(num.group()) if num else int(ctx.get("rotate_deg", 30))
-        ax = axis or ctx.get("rotate_axis", "y")
-        ctx["rotate_deg"], ctx["rotate_axis"] = degrees, ax
-        # "rotate TO 90" / "set it to 90" / "make it 90" = absolute; otherwise relative.
-        absolute = _has(t, "rotate to", "rotate it to", "set it to", "set the rotation", "make it", "orient to", "go to")
-        rot_args = {"degrees": degrees, "axis": ax}
-        if not absolute:  # direction is meaningful only for a RELATIVE rotation
-            # Check counterclockwise FIRST — it contains the substring "clockwise".
-            if _has(t, "counterclockwise", "counter-clockwise", "counter clockwise", "anticlockwise", "anti-clockwise", "ccw"):
-                rot_args["direction"] = "counterclockwise"
-            elif _has(t, "clockwise", "cw"):
-                rot_args["direction"] = "clockwise"
-        calls.append(("set_rotation" if absolute else "rotate_model", rot_args))
-        model_cmd = True
-    if _has(t, "reset the view", "reset view", "reset the model", "default view", "recenter",
-            "re-center", "reset the camera", "center the model"):
-        calls.append(("reset_view", {}))
-        model_cmd = True
-    if _has(t, "3d model", "three d model", "show the model", "show me the model",
-            "pull up the model", "open the model", "model panel", "the 3-d model"):
-        model_cmd = True
+    model_cue = "model" in t or " axis" in t or _has(t, "on x", "on y", "on z") \
+        or re.search(r"-?\d+\s*degree", t) is not None
+    model_cmd = (rotate_verb and model_cue) \
+        or _has(t, "3d model", "three d model", "the 3-d model", "show the model", "show me the model",
+                "pull up the model", "open the model", "model panel", "spin the model",
+                "turn the model", "rotate the model") \
+        or _has(t, "reset the view", "reset view", "reset the model", "default view", "recenter",
+                "re-center", "reset the camera", "center the model")
     if model_cmd and ("show_panel", {"panel": "model"}) not in calls:
         calls.insert(0, ("show_panel", {"panel": "model"}))
 

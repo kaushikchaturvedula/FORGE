@@ -437,8 +437,10 @@ def rotate_model(state: SessionState, args: dict) -> ToolResult:
     state.visible_panels.add("model")
     state.model_rotation[axis] = (state.model_rotation.get(axis, 0) + degrees) % 360
     return ToolResult(
-        output={"rotated": degrees, "axis": axis},
-        control={"action": "rotate_model", "degrees": degrees, "axis": axis},
+        output={"rotated": degrees, "axis": axis, "rotation": dict(state.model_rotation)},
+        # Send the resulting ABSOLUTE orientation (single source of truth): the frontend SETS the
+        # mesh to this, so a deduped/missed delta can never drift the render from the state.
+        control={"action": "rotate_model", "rotation": dict(state.model_rotation)},
     )
 
 
@@ -455,8 +457,8 @@ def set_rotation(state: SessionState, args: dict) -> ToolResult:
     state.visible_panels.add("model")
     state.model_rotation[axis] = degrees % 360
     return ToolResult(
-        output={"set_to": degrees, "axis": axis},
-        control={"action": "set_rotation", "degrees": degrees, "axis": axis},
+        output={"set_to": degrees, "axis": axis, "rotation": dict(state.model_rotation)},
+        control={"action": "set_rotation", "rotation": dict(state.model_rotation)},
     )
 
 
@@ -464,7 +466,8 @@ def reset_view(state: SessionState, args: dict) -> ToolResult:
     """Restore the 3D model's default camera + orientation."""
     state.visible_panels.add("model")  # reset_view renders the model panel — track it (like rotate/set)
     state.model_rotation = {"x": 0, "y": 0, "z": 0}
-    return ToolResult(output={"view": "reset"}, control={"action": "reset_view"})
+    return ToolResult(output={"view": "reset", "rotation": dict(state.model_rotation)},
+                      control={"action": "reset_view", "rotation": dict(state.model_rotation)})
 
 
 # ── voice-driven highlighting (overview schematic) ───────────────────────────

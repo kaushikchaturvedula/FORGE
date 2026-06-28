@@ -53,15 +53,17 @@ def test_clear_and_hide_panels():
     assert ("hide_panel", {"panel": "model"}) in infer_tools("hide the 3d model", {})
 
 
-def test_show_and_rotate_model_with_context_carry():
-    ctx: dict = {}
-    assert ("show_panel", {"panel": "model"}) in infer_tools("show me the 3d model", ctx)
-    r1 = infer_tools("rotate the model 30 degrees", ctx)
-    assert ("rotate_model", {"degrees": 30, "axis": "y"}) in r1
-    # follow-up reuses the prior 30 degrees, switches axis
-    r2 = infer_tools("on the x axis", ctx)
-    assert ("rotate_model", {"degrees": 30, "axis": "x"}) in r2
-    assert ("reset_view", {}) in infer_tools("reset the view", ctx)
+def test_model_commands_reveal_panel_but_never_rotate():
+    # NATIVE-ONLY: the intent fallback only REVEALS the 3D-model panel; it must NOT emit any
+    # rotate_model/set_rotation/reset_view (the realtime model's function call is the single
+    # authoritative rotation source — a divergent keyword guess used to double-apply).
+    for utter in ("show me the 3d model", "rotate the model 30 degrees",
+                  "rotate by ninety counterclockwise on y", "reset the view", "rotate 30 on x"):
+        calls = infer_tools(utter, {})
+        assert ("show_panel", {"panel": "model"}) in calls, utter
+        assert not any(n in ("rotate_model", "set_rotation", "reset_view") for n, _ in calls), utter
+    # a non-model "turn" must not even reveal the panel
+    assert infer_tools("turn it off", {}) == []
 
 
 def test_highlight_component_from_user():

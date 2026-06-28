@@ -7,9 +7,8 @@ import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 // panel is for whole-machine orientation: drag to orbit, or say "rotate the model 30
 // degrees / on the x axis / reset the view". Each command arrives as a bumped `cmd.seq`.
 export interface ModelCmd {
-  action: "rotate" | "set" | "reset" | "none";
-  degrees?: number;
-  axis?: "x" | "y" | "z";
+  action: "set_abs" | "reset" | "none";
+  rotation?: { x: number; y: number; z: number };  // ABSOLUTE orientation from backend state
   seq: number;
 }
 
@@ -118,24 +117,20 @@ export function ModelPanel({ cmd }: { cmd: ModelCmd }) {
     const camera = cameraRef.current;
     const controls = controlsRef.current;
     const home = homeRef.current;
-    if (!model) return; // not loaded — replay after load via the `loaded` dep
+    if (!model || !home) return; // not loaded — replay after load via the `loaded` dep
     lastSeq.current = cmd.seq;
-    const ax = cmd.axis ?? "y";
-    if (cmd.action === "rotate" && model) {
-      const rad = ((cmd.degrees ?? 30) * Math.PI) / 180;
-      model.rotation[ax] += rad;
-      angles.current[ax] = (((angles.current[ax] + (cmd.degrees ?? 30)) % 360) + 360) % 360;
-    } else if (cmd.action === "set" && model && home) {
-      // Absolute angle on the named axis (relative to the model's home orientation).
-      const deg = cmd.degrees ?? 0;
-      model.rotation[ax] = home.rot[ax] + (deg * Math.PI) / 180;
-      angles.current[ax] = ((deg % 360) + 360) % 360;
-    } else if (cmd.action === "reset" && model && camera && controls && home) {
-      model.rotation.copy(home.rot);
+    if (cmd.action !== "set_abs" && cmd.action !== "reset") return;
+    // SET the mesh to the AUTHORITATIVE ABSOLUTE rotation from backend state (not a relative
+    // delta), so the render can never drift from state.model_rotation — even if a control was
+    // deduped/missed, or only the last command replays after the GLB loads.
+    const r = cmd.rotation ?? { x: 0, y: 0, z: 0 };
+    const rad = (d: number) => (d * Math.PI) / 180;
+    model.rotation.set(home.rot.x + rad(r.x), home.rot.y + rad(r.y), home.rot.z + rad(r.z));
+    angles.current = { x: r.x, y: r.y, z: r.z };
+    if (cmd.action === "reset" && camera && controls) {
       camera.position.copy(home.pos);
       controls.target.copy(home.target);
       controls.update();
-      angles.current = { x: 0, y: 0, z: 0 };
     }
     const a = angles.current;
     setAngleLabel(([["X", a.x], ["Y", a.y], ["Z", a.z]] as const).filter(([, v]) => v).map(([k, v]) => `${k} ${Math.round(v)}°`).join("  "));
