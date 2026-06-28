@@ -102,6 +102,7 @@ def bridge():
     b._asset_label = b.orch.state.asset_id
     b._response_active = False
     b._pending_response = False
+    b._turn_nonce = 0
     b._announced_alerts = set()
     b._pending_proactive = None
     b._bg_tasks = set()
@@ -492,6 +493,51 @@ async def test_proactive_alert_deferred_while_user_speaking(bridge):
     bridge.session._buffer_has_audio = False            # user stopped
     await _drain_to_speak(bridge)
     assert bridge.session.responses == 1               # fires at the next safe moment
+
+
+# ── 3D rotation: relative vs absolute state math + dedup ─────────────────────
+def test_rotation_sequence_state_math():
+    # The exact reported sequence — proves relative/absolute compose and repeats accumulate.
+    from app.grounding.callbacks import execute_tool
+    from app.agents.session_state import SessionState
+
+    s = SessionState()
+    execute_tool(s, "rotate_model", {"degrees": 30, "axis": "x"})
+    assert s.model_rotation == {"x": 30, "y": 0, "z": 0}
+    execute_tool(s, "rotate_model", {"degrees": 30, "axis": "x"})   # repeated relative -> accumulate
+    assert s.model_rotation == {"x": 60, "y": 0, "z": 0}
+    execute_tool(s, "set_rotation", {"degrees": 90, "axis": "x"})   # absolute set, Y untouched
+    assert s.model_rotation == {"x": 90, "y": 0, "z": 0}
+    execute_tool(s, "rotate_model", {"degrees": 90, "axis": "y"})   # relative on another axis
+    assert s.model_rotation == {"x": 90, "y": 90, "z": 0}
+    execute_tool(s, "reset_view", {})
+    assert s.model_rotation == {"x": 0, "y": 0, "z": 0}
+
+
+async def test_relative_rotation_dedup_is_per_turn(bridge):
+    # native + intent of the SAME utterance (same nonce) -> applied once
+    bridge._turn_nonce = 5
+    await bridge._apply_tool("rotate_model", {"degrees": 30, "axis": "x"})
+    await bridge._apply_tool("rotate_model", {"degrees": 30, "axis": "x"})  # the intent dupe
+    assert bridge.orch.state.model_rotation["x"] == 30  # deduped within the turn
+    # a SEPARATE utterance (new nonce) must accumulate, not be suppressed
+    bridge._turn_nonce = 6
+    await bridge._apply_tool("rotate_model", {"degrees": 30, "axis": "x"})
+    assert bridge.orch.state.model_rotation["x"] == 60  # NOT deduped across turns
+
+
+def test_intent_parses_degrees_without_the_word_degree():
+    # BUG 2 root cause: "rotate by 90 on y" must yield 90, not a stale ctx value.
+    from app.agents import intent
+
+    ctx = {}
+    intent.infer_tools("rotate by 30 degrees on x", ctx)      # seeds ctx rotate_deg=30
+    calls = intent.infer_tools("rotate by 90 on y", ctx)       # no word "degree"
+    rot = [a for n, a in calls if n == "rotate_model"]
+    assert rot and rot[0] == {"degrees": 90, "axis": "y"}      # 90 (parsed), NOT stale 30
+    # a bare axis follow-up still reuses the remembered amount
+    follow = intent.infer_tools("on the z axis", {"rotate_deg": 45, "rotate_axis": "x"})
+    assert ("rotate_model", {"degrees": 45, "axis": "z"}) in follow
 
 
 # ── autonomous workflow chaining ─────────────────────────────────────────────

@@ -93,7 +93,14 @@ def infer_tools(transcript: str, ctx: dict | None = None) -> list[tuple[str, dic
     # (anchored to end), so "the x axis travel is 560" doesn't trigger a rotation.
     axis_followup = bool(re.match(r"^\s*(on |do |now |and |make it |use )?(the )?[xyz][\s-]*axis\.?\s*$", t)) and ctx.get("rotate_deg")
     if rotate_triggered or (axis_followup and not rotate_triggered):
-        degrees = int(deg_match.group(1)) if deg_match else int(ctx.get("rotate_deg", 30))
+        # Parse the rotation amount: prefer "N degrees", else the integer in the command
+        # ("rotate by 90 on y" -> 90 — NOT a stale ctx value), else (a bare axis follow-up
+        # like "on the x axis") reuse the remembered amount.
+        if deg_match:
+            degrees = int(deg_match.group(1))
+        else:
+            num = re.search(r"-?\d+", t)
+            degrees = int(num.group()) if num else int(ctx.get("rotate_deg", 30))
         ax = axis or ctx.get("rotate_axis", "y")
         ctx["rotate_deg"], ctx["rotate_axis"] = degrees, ax
         # "rotate TO 90" / "set it to 90" / "make it 90" = absolute; otherwise relative.

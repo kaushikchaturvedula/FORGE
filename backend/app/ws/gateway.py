@@ -47,6 +47,9 @@ logger = logging.getLogger("forge.gateway")
 AUDIO_FLUSH_BYTES = 3200  # ~100 ms of 16 kHz mono PCM16
 DEDUP_WINDOW_S = 4.0
 MAX_CONNECT_FAILURES = 5
+# RELATIVE/cumulative tools: dedup native+intent of the SAME utterance, but two SEPARATE
+# "rotate by 30" turns must each apply — so their dedup key is scoped to the user turn.
+_RELATIVE_TOOLS = frozenset({"rotate_model"})
 
 # Realtime warnings that are non-fatal noise — logged, never shown as a red banner.
 # The idle/response timeouts just mean "nobody spoke for a while"; the downstream loop
@@ -233,6 +236,7 @@ class RealtimeBridge:
         self._forge_recent_text = ""  # FORGE's current/last spoken text (to detect echo)
         self._spoke_over_forge = False  # the in-progress user turn began while FORGE was speaking
         self._forge_text_at_barge = ""  # FORGE's text when that user turn started
+        self._turn_nonce = 0  # increments per user utterance (scopes relative-tool dedup to a turn)
         self._last_user_text = ""  # most recent user utterance (guards unrequested procedure starts)
 
     # ── lifecycle ────────────────────────────────────────────────────────────
@@ -440,6 +444,7 @@ class RealtimeBridge:
             await self._on_user_transcript(evt.text)
         elif isinstance(evt, events.SpeechStarted):
             logger.info("VAD speech_started (forge_speaking=%s)", self._response_active)  # cutoff diagnostics
+            self._turn_nonce += 1  # a new user utterance — relative rotations from here accumulate
             self.session.set_speaking(True)  # open the image-append window (uncommitted audio)
             # Remember if this user turn began while FORGE was speaking (for the echo check).
             self._spoke_over_forge = self._response_active
@@ -579,6 +584,10 @@ class RealtimeBridge:
                                              "message": "Logged the completion; I did not open the procedure. "
                                                         "Say 'start the procedure' to walk through it."})
         key = f"{name}:{json.dumps(args, sort_keys=True)}"
+        if name in _RELATIVE_TOOLS:
+            # Scope to this user turn: native+intent of one utterance still dedup, but a
+            # separate "rotate by 30" utterance (new nonce) accumulates instead of being lost.
+            key = f"{key}:turn{self._turn_nonce}"
         if self.dedup.is_duplicate(key, time.monotonic()):
             logger.info("deduped tool call %s", name)
             return self._outcome_cache.get(key)
