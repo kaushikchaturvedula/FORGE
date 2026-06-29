@@ -174,8 +174,22 @@ def build_ui_state(state: SessionState) -> str:
                 s += f" (highlighting the {state.active_highlight})"
             parts.append(s)
         elif p == "procedure":
-            title = (state.active_procedure or state.active_safety or {}).get("title")
-            parts.append(f"a procedure/checklist{f' ({title})' if title else ''}")
+            ap, asf = state.active_procedure, state.active_safety
+            if ap:
+                steps = ap.get("steps", [])
+                i = ap.get("index", 0)
+                cur = steps[i].get("text") if 0 <= i < len(steps) else ""
+                done = sorted(d + 1 for d in ap.get("completed", set()))
+                done_str = f", steps {', '.join(map(str, done))} done" if done else ""
+                parts.append(f"the {ap.get('title', '')} procedure (on step {i + 1} of {len(steps)}{done_str}: '{cur}')")
+            elif asf:
+                items = asf.get("items", [])
+                i = asf.get("index", 0)
+                cur = items[i].get("text") if 0 <= i < len(items) else ""
+                conf_str = f", items 1–{i} confirmed" if i > 0 else ""
+                parts.append(f"the {asf.get('title', '')} safety checklist (on item {i + 1} of {len(items)}{conf_str}: '{cur}')")
+            else:
+                parts.append("a procedure/checklist")
         elif p == "model":
             r = state.model_rotation
             parts.append(f"the 3D model (rotation: X {int(r.get('x', 0))}°, Y {int(r.get('y', 0))}°, "

@@ -34,6 +34,25 @@ def test_every_tool_parameters_is_valid_json_schema():
             assert req in params["properties"], f"{name}: required {req} not in properties"
 
 
+def test_run_safety_check_action_enum_is_strict():
+    # SAFETY stays strict-by-omission: NO skip/goto/bulk/complete on the safety tool.
+    enum = schemas.TOOLS["run_safety_check"]["function"]["parameters"]["properties"]["action"]["enum"]
+    assert enum == ["start", "confirm", "repeat"]
+
+
+def test_procedure_step_action_enum_is_flexible():
+    enum = schemas.TOOLS["procedure_step"]["function"]["parameters"]["properties"]["action"]["enum"]
+    assert "goto" in enum and "complete" in enum
+
+
+def test_procedure_step_validate_requires_ints():
+    assert wl.validate("procedure_step", {"action": "goto", "step": 3})          # valid
+    assert not wl.validate("procedure_step", {"action": "goto"})                 # missing step
+    assert not wl.validate("procedure_step", {"action": "goto", "step": 0})      # not positive
+    assert wl.validate("procedure_step", {"action": "complete", "through": 2})   # valid
+    assert not wl.validate("procedure_step", {"action": "complete"})             # missing through
+
+
 def test_enums_match_whitelists():
     assert set(schemas.TOOLS["show_machine_data"]["function"]["parameters"]["properties"]["data_type"]["enum"]) == wl.DATA_TYPES
     assert set(schemas.TOOLS["record_measurement"]["function"]["parameters"]["properties"]["type"]["enum"]) == wl.MEASUREMENT_TYPES

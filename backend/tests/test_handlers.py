@@ -91,6 +91,62 @@ def test_procedure_step_without_active_is_graceful(state):
     assert r.output["error"] == "no_active_procedure"
 
 
+# ── procedures: flexible goto (navigate) vs complete (operator-asserted) ──────
+def test_procedure_goto_navigates_without_completing(state):
+    run(state, "start_procedure", {"procedure_id": "tool_change"})
+    r = run(state, "procedure_step", {"action": "goto", "step": 3})
+    assert state.active_procedure["index"] == 2           # 1-based 3 -> 0-based 2
+    assert state.active_procedure["completed"] == set()   # navigation completes nothing
+    assert not any(e["type"] == "procedure_step" for e in state.work_log)  # goto logs nothing
+    assert r.panel["data"]["completed"] == []
+
+
+def test_procedure_complete_marks_through_and_moves(state):
+    run(state, "start_procedure", {"procedure_id": "tool_change"})  # 7 steps
+    r = run(state, "procedure_step", {"action": "complete", "through": 3, "goto_step": 4})
+    assert state.active_procedure["completed"] == {0, 1, 2}
+    assert state.active_procedure["index"] == 3            # goto_step 4 -> 0-based 3
+    assert state.active_procedure is not None              # NOT finished (7 steps)
+    logs = [e for e in state.work_log if e["type"] == "procedure_step"]
+    assert len(logs) == 1 and "operator-asserted" in logs[0]["note"]  # exactly ONE log
+    assert r.panel["data"]["completed"] == [0, 1, 2]
+
+
+def test_procedure_next_completes_current_previous_keeps_it(state):
+    run(state, "start_procedure", {"procedure_id": "tool_change"})
+    run(state, "procedure_step", {"action": "next"})      # completes 0, advances to 1
+    assert state.active_procedure["completed"] == {0}
+    assert state.active_procedure["index"] == 1
+    assert any(e["type"] == "procedure_step" for e in state.work_log)
+    run(state, "procedure_step", {"action": "previous"})  # cursor only
+    assert state.active_procedure["index"] == 0
+    assert state.active_procedure["completed"] == {0}     # previous never un-completes
+
+
+def test_procedure_complete_through_total_finishes(state):
+    run(state, "start_procedure", {"procedure_id": "tool_change"})
+    total = len(state.active_procedure["steps"])
+    r = run(state, "procedure_step", {"action": "complete", "through": total})
+    assert r.output.get("complete") is True
+    assert state.active_procedure is None
+
+
+# ── safety: strict, per-item, operator-asserted ──────────────────────────────
+def test_safety_confirm_log_is_operator_asserted(state):
+    run(state, "run_safety_check", {"check_type": "loto"})
+    run(state, "run_safety_check", {"check_type": "loto", "action": "confirm"})
+    logs = [e for e in state.work_log if e["type"] == "safety_confirm"]
+    assert logs and "asserted, not agent-verified" in logs[0]["note"]
+
+
+def test_safety_out_of_enum_action_does_not_advance(state):
+    run(state, "run_safety_check", {"check_type": "loto"})
+    assert state.active_safety["index"] == 0
+    # an out-of-enum action returns the CURRENT item without advancing (strict by omission)
+    run(state, "run_safety_check", {"check_type": "loto", "action": "goto"})
+    assert state.active_safety["index"] == 0
+
+
 # ── schematic navigation ─────────────────────────────────────────────────────
 def test_navigate_jump_to_drawbar_returns_geometry(state):
     run(state, "show_schematic", {"diagram_type": "spindle"})

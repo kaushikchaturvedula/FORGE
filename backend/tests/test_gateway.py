@@ -247,6 +247,28 @@ def test_build_ui_state_reflects_panels():
     assert "axes schematic" in out and "X axis" in out
 
 
+def test_build_ui_state_includes_checklist_position():
+    from app.ws.gateway import build_ui_state
+    from app.agents.session_state import SessionState
+    from app.agents.tools.handlers import start_procedure, procedure_step, run_safety_check
+
+    # procedure: 1-based "on step X of Y" + the completed steps
+    sp = SessionState()
+    start_procedure(sp, {"procedure_id": "tool_change"})  # 7 steps
+    procedure_step(sp, {"action": "complete", "through": 2, "goto_step": 3})
+    sp.visible_panels.add("procedure")
+    out = build_ui_state(sp)
+    assert "on step 3 of 7" in out and "steps 1, 2 done" in out
+
+    # safety: 1-based "on item X of Y" + the confirmed items
+    ss = SessionState()
+    run_safety_check(ss, {"check_type": "loto"})
+    run_safety_check(ss, {"check_type": "loto", "action": "confirm"})
+    ss.visible_panels.add("procedure")
+    out2 = build_ui_state(ss)
+    assert "on item 2 of" in out2 and "items 1" in out2 and "confirmed" in out2
+
+
 def test_procedure_step_auto_logs_each_step():
     from app.agents.tools.handlers import start_procedure, procedure_step
     from app.agents.session_state import SessionState

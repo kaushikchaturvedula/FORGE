@@ -23,7 +23,7 @@ MEASUREMENT_TYPES = {
     "air_temperature",
     "process_temperature",
 }
-STEP_ACTIONS = {"next", "previous", "repeat", "back"}
+STEP_ACTIONS = {"next", "previous", "repeat", "back", "goto", "complete"}
 NAV_ACTIONS = {"jump", "zoom_in", "zoom_out", "pan", "reset", "toggle_layer"}
 PANELS = {
     "schematic",
@@ -165,7 +165,11 @@ def validate(tool_name: str, args: dict) -> ValidationResult:
     if tool_name == "procedure_step":
         action = str(args.get("action", "")).lower()
         if action not in STEP_ACTIONS:
-            return _reject(f"I can go next, previous, or repeat — not {action!r}.")
+            return _reject(f"I can go next, previous, repeat, jump to a step, or mark steps complete — not {action!r}.")
+        if action == "goto" and not _is_positive_int(args.get("step")):
+            return _reject("Which step number should I go to?")
+        if action == "complete" and not _is_positive_int(args.get("through")):
+            return _reject("How many steps should I mark complete?")
         return _OK
 
     if tool_name in ("show_panel", "hide_panel"):
@@ -202,5 +206,12 @@ def _is_number(value) -> bool:
     try:
         float(value)
         return True
+    except (TypeError, ValueError):
+        return False
+
+
+def _is_positive_int(value) -> bool:
+    try:
+        return int(value) >= 1
     except (TypeError, ValueError):
         return False

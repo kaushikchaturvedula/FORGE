@@ -223,7 +223,7 @@ def run_safety_check(state: SessionState, args: dict) -> ToolResult:
     # action == "confirm": advance past the current item.
     if action == "confirm":
         confirmed_item = items[idx]
-        entry = state.add_log("safety_confirm", f"Confirmed: {confirmed_item['text']}", check_type=key, item=confirmed_item["n"])
+        entry = state.add_log("safety_confirm", f"Operator confirmed item {confirmed_item['n']} (asserted, not agent-verified): {confirmed_item['text']}", check_type=key, item=confirmed_item["n"])
         active["index"] = idx + 1
         if active["index"] >= len(items):
             completion = active.get("completion") or "Checklist complete."
@@ -254,7 +254,7 @@ def _safety_view(state: SessionState, spoken_prefix: str = "") -> ToolResult:
 # ── procedures ───────────────────────────────────────────────────────────────
 def start_procedure(state: SessionState, args: dict) -> ToolResult:
     key, proc = catalog.resolve_procedure(args.get("procedure_id", ""))  # validated upstream
-    state.active_procedure = {"procedure_id": key, "title": proc.get("title"), "steps": proc.get("steps", []), "index": 0, "warnings": proc.get("warnings", [])}
+    state.active_procedure = {"procedure_id": key, "title": proc.get("title"), "steps": proc.get("steps", []), "index": 0, "completed": set(), "warnings": proc.get("warnings", [])}
     state.add_log("procedure", f"Started procedure: {proc.get('title')}")
     return _procedure_view(state)
 
@@ -265,22 +265,56 @@ def procedure_step(state: SessionState, args: dict) -> ToolResult:
     action = str(args.get("action", "next")).lower()
     proc = state.active_procedure
     steps = proc["steps"]
+    last = len(steps) - 1
+    completed: set = proc.setdefault("completed", set())
+
+    def _finish() -> ToolResult:
+        title = proc["title"]
+        state.add_log("procedure", f"Completed procedure: {title}")
+        state.active_procedure = None
+        return ToolResult(output={"complete": True, "message": f"{title} complete."},
+                          panel={"panel": "procedure", "data": {"mode": "procedure", "complete": True, "title": title}})
+
+    if action == "goto":
+        # Pure navigation: move the cursor only — mark NOTHING complete and log NOTHING.
+        proc["index"] = max(0, min(last, int(args.get("step", proc["index"] + 1)) - 1))
+        return _procedure_view(state)
+
+    if action == "complete":
+        # Operator-asserted bulk completion (NOT agent-verified): mark steps 1..through done.
+        through = max(0, min(len(steps), int(args.get("through", 0))))
+        completed.update(range(through))
+        entry = state.add_log("procedure_step",
+                              f"Steps 1–{through} complete per operator (operator-asserted, not agent-verified)",
+                              step=through)
+        if len(completed) >= len(steps):
+            res = _finish()
+            res.log = entry
+            return res
+        goto_step = args.get("goto_step")
+        proc["index"] = max(0, min(last, (int(goto_step) - 1) if goto_step else through))
+        view = _procedure_view(state)
+        view.log = entry
+        return view
+
     if action == "next":
-        done = steps[proc["index"]]  # the step the tech just completed
-        entry = state.add_log("procedure_step", f"Step {done.get('n')} done: {done.get('text')}", step=done.get("n"))
-        if proc["index"] >= len(steps) - 1:
-            title = proc["title"]
-            state.add_log("procedure", f"Completed procedure: {title}")
-            state.active_procedure = None
-            return ToolResult(output={"complete": True, "message": f"{title} complete."},
-                              panel={"panel": "procedure", "data": {"mode": "procedure", "complete": True, "title": title}}, log=entry)
+        completed.add(proc["index"])  # operator asserts the current step is done
+        done = steps[proc["index"]]
+        entry = state.add_log("procedure_step",
+                              f"Step {done.get('n')} done per operator (operator-asserted, not agent-verified): {done.get('text')}",
+                              step=done.get("n"))
+        if proc["index"] >= last:
+            res = _finish()
+            res.log = entry
+            return res
         proc["index"] += 1
         view = _procedure_view(state)
         view.log = entry  # surface the completed step to the live work-order feed
         return view
-    elif action in ("previous", "back"):
-        proc["index"] = max(0, proc["index"] - 1)
-    return _procedure_view(state)
+
+    if action in ("previous", "back"):
+        proc["index"] = max(0, proc["index"] - 1)  # cursor only — never un-complete a step
+    return _procedure_view(state)  # previous/back/repeat/unknown: show the current step
 
 
 def _procedure_view(state: SessionState) -> ToolResult:
@@ -288,7 +322,7 @@ def _procedure_view(state: SessionState) -> ToolResult:
     step = proc["steps"][proc["index"]]
     return ToolResult(
         output={"procedure_id": proc["procedure_id"], "step_number": step.get("n"), "total": len(proc["steps"]), "step": step.get("text"), "warning": step.get("warning"), "expect": step.get("expect")},
-        panel={"panel": "procedure", "data": {"mode": "procedure", "title": proc["title"], "steps": proc["steps"], "index": proc["index"], "warnings": proc["warnings"]}},
+        panel={"panel": "procedure", "data": {"mode": "procedure", "title": proc["title"], "steps": proc["steps"], "index": proc["index"], "completed": sorted(proc.get("completed", set())), "warnings": proc["warnings"]}},
         control={"action": "show_panel", "panel": "procedure"},
     )
 

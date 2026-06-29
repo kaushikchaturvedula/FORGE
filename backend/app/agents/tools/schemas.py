@@ -158,14 +158,30 @@ TOOLS: dict[str, dict[str, Any]] = {
     ),
     "procedure_step": _fn(
         "procedure_step",
-        "Call to move within the procedure already in progress: next, previous, or repeat the "
-        "current step (e.g. 'next step').",
+        "Move within the procedure in progress. NAVIGATION is read-only and completes nothing: "
+        "'next'/'previous'/'repeat' move the cursor, 'goto' jumps to a step number (e.g. 'go to "
+        "step 4', 'show the last step'). COMPLETION is operator-asserted (you never verify it "
+        "yourself): 'complete' marks steps 1..through as done per the operator (e.g. 'I've done "
+        "steps 1 to 3'). Use 'goto' to merely show a step; use 'complete' only when the operator "
+        "says they finished steps.",
         {
             "action": {
                 "type": "string",
-                "enum": ["next", "previous", "repeat"],
-                "description": "Step movement.",
-            }
+                "enum": ["next", "previous", "repeat", "goto", "complete"],
+                "description": "next/previous/repeat/goto = navigate (no completion); complete = mark steps done per operator.",
+            },
+            "step": {
+                "type": "integer",
+                "description": "1-based target step for action='goto' (navigation only — no completion).",
+            },
+            "through": {
+                "type": "integer",
+                "description": "For action='complete': mark steps 1..through as completed (operator-asserted).",
+            },
+            "goto_step": {
+                "type": "integer",
+                "description": "Optional 1-based cursor after action='complete' (defaults to the step after 'through').",
+            },
         },
         ["action"],
     ),
