@@ -68,6 +68,36 @@ export function MachineDataPanel({ data }: { data: any }) {
     );
   }
 
+  if (view === "diagnosis") {
+    // Render ONLY the known diagnosis fields — ignoring any stale readings/thresholds the WS
+    // shallow-merge leaves on `data` from the workflow's prior telemetry step (which the generic
+    // fallback below would otherwise dump as a raw JSON blob).
+    const conf = String(data.confidence || "").toLowerCase();
+    const confTone = conf.startsWith("high") ? "text-forge-live" : conf.startsWith("med") ? "text-forge-warn" : "text-forge-muted";
+    const rows = kv({ "Recommended action": data.recommended_action, Evidence: data.evidence });
+    return (
+      <div>
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <div className="text-sm font-semibold text-forge-text">Diagnosis</div>
+          {data.confidence && (
+            <span className={`rounded bg-forge-bg px-2 py-0.5 text-[10px] font-semibold uppercase ${confTone}`}>{conf}</span>
+          )}
+        </div>
+        <div className="mb-2 rounded bg-forge-accent/20 px-3 py-2 text-base text-forge-text">
+          {data.root_cause || "No root cause identified yet."}
+        </div>
+        <dl className="flex flex-col gap-1 text-sm">
+          {rows.map((r) => (
+            <div key={r.k} className="flex flex-col gap-0.5 border-b border-forge-edge/50 py-1">
+              <dt className="text-[10px] uppercase text-forge-muted">{r.k}</dt>
+              <dd className="text-forge-text">{r.v}</dd>
+            </div>
+          ))}
+        </dl>
+      </div>
+    );
+  }
+
   // nameplate / specs: render the object as nested key/values.
   const omit = new Set(["view", "asset_id"]);
   const entries = Object.entries(data).filter(([k]) => !omit.has(k));
