@@ -395,10 +395,31 @@ async def test_hide_machine_map_hides_only_overview(bridge):
     assert not any(m.get("panel") == "all" for m in bridge.ws.json_sent if m["type"] == "control")
 
 
-async def test_hide_panel_not_shown_reports_from_uistate(bridge):
-    # nothing shown -> "hide the machine map" must say it's not shown (not pretend / not clear)
+async def test_hide_panel_is_idempotent_no_denial(bridge):
+    # nothing shown -> "hide the machine map" is now idempotent SUCCESS (never a contradiction):
+    # it reports hidden + already_hidden and still emits the hide control so the frontend heals.
     out = await bridge._apply_tool("hide_panel", {"panel": "machine map"})
-    assert out.model_output.get("ok") is False and out.model_output.get("not_shown") == "overview"
+    assert out.model_output.get("hidden") == "overview"
+    assert out.model_output.get("already_hidden") is True
+    assert any(m["type"] == "control" and m.get("panel") == "overview" for m in bridge.ws.json_sent)
+
+
+async def test_hide_panel_unknown_name_asks_not_denies(bridge):
+    # a genuinely unknown panel name is caught by grounding (rejected with a "which one?"),
+    # so FORGE never claims to hide a nonexistent panel — and never denies a real one either.
+    out = await bridge._apply_tool("hide_panel", {"panel": "the flux capacitor"})
+    assert out.model_output.get("error") == "rejected"
+    assert "panel" in out.model_output.get("message", "").lower()
+
+
+async def test_hide_panel_alias_duplicate_dedups(bridge):
+    # two aliases of the SAME panel in one burst collapse to one call (canonical dedup key),
+    # so the 2nd never runs to "deny" a panel the 1st already hid.
+    await bridge._apply_tool("show_panel", {"panel": "schematic"})
+    first = await bridge._apply_tool("hide_panel", {"panel": "spindle schematic"})
+    second = await bridge._apply_tool("hide_panel", {"panel": "schematic"})
+    assert first.model_output.get("hidden") == "schematic"
+    assert second is first  # cached outcome returned -> the duplicate was deduped, not re-run
 
 
 def test_reset_view_tracks_model_panel():
@@ -412,9 +433,9 @@ def test_reset_view_tracks_model_panel():
     assert "model" in s.visible_panels
     r = execute_tool(s, "hide_panel", {"panel": "3D model"})
     assert r.output.get("hidden") == "model" and "model" not in s.visible_panels
-    # genuinely not shown -> honest not_shown
+    # hide is idempotent now: hiding an already-absent panel still reports success (no denial)
     r2 = execute_tool(SessionState(), "hide_panel", {"panel": "3D model"})
-    assert r2.output.get("not_shown") == "model"
+    assert r2.output.get("hidden") == "model" and r2.output.get("already_hidden") is True
 
 
 def test_execute_tool_syncs_visible_panels():
@@ -431,9 +452,9 @@ def test_execute_tool_syncs_visible_panels():
     # "hide the checklist" resolves to procedure, which IS shown -> hides it (no false "not shown")
     r = execute_tool(s, "hide_panel", {"panel": "checklist"})
     assert r.output.get("hidden") == "procedure" and "procedure" not in s.visible_panels
-    # genuinely absent -> honest not_shown
+    # genuinely absent -> idempotent success (no denial), still reports hidden
     r2 = execute_tool(SessionState(), "hide_panel", {"panel": "machine map"})
-    assert r2.output.get("not_shown") == "overview"
+    assert r2.output.get("hidden") == "overview" and r2.output.get("already_hidden") is True
 
 
 # ── proactive (autopilot) safety alerts ─────────────────────────────────────
@@ -525,6 +546,25 @@ async def test_relative_rotation_dedup_is_per_turn(bridge):
     bridge._turn_nonce = 6
     await bridge._apply_tool("rotate_model", {"degrees": 30, "axis": "x"})
     assert bridge.orch.state.model_rotation["x"] == 60  # NOT deduped across turns
+
+
+async def test_step_tool_dedup_is_per_turn(bridge):
+    # Sequential step tools (run_safety_check{confirm}) carry IDENTICAL args every call — the
+    # advancing index is server-side — so they must be turn-scoped: native+intent of ONE
+    # confirmation collapse, but separate confirmations across turns each advance (dropping a
+    # LOTO/PPE "confirmed" would be a safety hazard).
+    bridge._turn_nonce = 1
+    await bridge._apply_tool("run_safety_check", {"check_type": "loto", "action": "start"})
+    assert bridge.orch.state.active_safety["index"] == 0
+    # same turn: native + intent duplicate confirm -> advances exactly ONCE
+    bridge._turn_nonce = 2
+    await bridge._apply_tool("run_safety_check", {"check_type": "loto", "action": "confirm"})
+    await bridge._apply_tool("run_safety_check", {"check_type": "loto", "action": "confirm"})  # intent dupe
+    assert bridge.orch.state.active_safety["index"] == 1  # collapsed within the turn
+    # a genuinely separate confirmation in the NEXT turn must advance (NOT deduped across turns)
+    bridge._turn_nonce = 3
+    await bridge._apply_tool("run_safety_check", {"check_type": "loto", "action": "confirm"})
+    assert bridge.orch.state.active_safety["index"] == 2
 
 
 async def test_native_only_no_y_contamination(bridge):

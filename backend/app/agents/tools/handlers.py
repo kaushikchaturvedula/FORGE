@@ -381,22 +381,30 @@ def show_panel(state: SessionState, args: dict) -> ToolResult:
 
 def hide_panel(state: SessionState, args: dict) -> ToolResult:
     """A SPECIFIC named target hides ONLY that panel — only 'all'/'everything' clears the
-    screen. Answers from real UIState: if the target isn't shown, say so (don't pretend)."""
-    panel = resolve_panel(args.get("panel", "")) or str(args.get("panel", "")).lower()
+    screen. Hiding is IDEMPOTENT: a panel that's already gone (or named again under a second
+    alias in the same breath) still reports success and re-sends the hide control. This stops
+    the model from ever denying a hide it was asked for ("it isn't on screen, I can't hide it")
+    and self-heals the frontend if a panel was still showing but already dropped from UIState."""
+    panel = resolve_panel(args.get("panel", ""))
+    if panel is None:
+        # Genuinely unknown panel name — don't claim to hide something that doesn't exist.
+        return ToolResult(output={"ok": False, "unknown_panel": str(args.get("panel", "")),
+                                  "message": "I'm not sure which panel you mean — say it again?"})
     if panel == "all":
         state.visible_panels.clear()
         state.active_schematic = state.schematic_focus = state.active_highlight = None
         return ToolResult(output={"hidden": "all"}, control={"action": "hide_panel", "panel": "all"})
-    if panel not in state.visible_panels:
-        return ToolResult(output={"ok": False, "not_shown": panel,
-                                  "visible": sorted(state.visible_panels),
-                                  "message": f"The {panel} panel isn't on the screen right now."})
-    state.visible_panels.discard(panel)
+    already_hidden = panel not in state.visible_panels
+    state.visible_panels.discard(panel)  # idempotent: a no-op if it was already hidden
     if panel == "schematic":
         state.active_schematic = state.schematic_focus = None
     elif panel == "overview":
         state.active_highlight = None
-    return ToolResult(output={"hidden": panel}, control={"action": "hide_panel", "panel": panel})
+    # Always confirm success + re-send the hide control, even if it was already gone — so an
+    # alias-duplicate hide (1st call hid it, 2nd would have denied it) reads as "it's off your
+    # screen" and any still-rendered panel actually disappears.
+    return ToolResult(output={"hidden": panel, "already_hidden": already_hidden},
+                      control={"action": "hide_panel", "panel": panel})
 
 
 # ── 3D model viewer ──────────────────────────────────────────────────────────

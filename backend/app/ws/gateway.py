@@ -36,6 +36,7 @@ from starlette.websockets import WebSocket, WebSocketDisconnect
 from app.agents import intent, workflows
 from app.agents.orchestrator import Orchestrator
 from app.agents.tools.handlers import resolved_rotation_degrees
+from app.grounding.whitelists import resolve_panel
 from app.agents.session_state import SessionState
 from app.config import Settings, get_settings
 from app.data.catalog import catalog
@@ -51,6 +52,14 @@ MAX_CONNECT_FAILURES = 5
 # RELATIVE/cumulative tools: dedup native+intent of the SAME utterance, but two SEPARATE
 # "rotate by 30" turns must each apply — so their dedup key is scoped to the user turn.
 _RELATIVE_TOOLS = frozenset({"rotate_model"})
+# Tools whose dedup key must canonicalize the panel name, so 'spindle schematic' and
+# 'schematic' (two aliases of one panel) collapse to ONE call instead of running twice.
+_PANEL_TOOLS = frozenset({"hide_panel", "show_panel"})
+# Sequential/step tools advance SERVER-SIDE state (the checklist item / procedure step) while
+# carrying IDENTICAL args every call — so they must be turn-scoped like rotate_model, or a 2nd
+# "confirmed" / "next" within the dedup window collapses and the step is silently dropped (a
+# safety hazard for a LOTO/PPE confirm).
+_STEP_TOOLS = frozenset({"run_safety_check", "procedure_step"})
 
 # Realtime warnings that are non-fatal noise — logged, never shown as a red banner.
 # The idle/response timeouts just mean "nobody spoke for a while"; the downstream loop
@@ -595,6 +604,18 @@ class RealtimeBridge:
             # dedup, but a separate "rotate by 30" utterance (new nonce) accumulates.
             canon = {"axis": str(args.get("axis", "y")).lower(), "degrees": resolved_rotation_degrees(args)}
             key = f"{name}:{json.dumps(canon, sort_keys=True)}:turn{self._turn_nonce}"
+        elif name in _PANEL_TOOLS:
+            # Canonicalize the panel id so alias-duplicate hides/shows of the SAME panel collapse
+            # ('spindle schematic' and 'schematic' -> one key). Distinct panels and calls outside
+            # the dedup window are unaffected, so the workflow chain's multi-call flow is untouched.
+            canon_panel = resolve_panel(args.get("panel", "")) or str(args.get("panel", "")).lower()
+            key = f"{name}:{canon_panel}"
+        elif name in _STEP_TOOLS:
+            # Step tools repeat identical args ({action:'confirm'} / {action:'next'}) each call —
+            # the advancing index is server-side — so scope the key to the turn nonce: native+intent
+            # duplicates of ONE utterance still collapse, but a separate confirm/next in a later turn
+            # runs and advances. (No arg canonicalization — turn-scoping only.)
+            key = f"{name}:{json.dumps(args, sort_keys=True)}:turn{self._turn_nonce}"
         if self.dedup.is_duplicate(key, time.monotonic()):
             logger.info("deduped tool call %s", name)
             return self._outcome_cache.get(key)
