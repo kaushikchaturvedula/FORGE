@@ -10,8 +10,8 @@ services:
       # Qwen Cloud / DashScope
       DASHSCOPE_API_KEY: ${DASHSCOPE_API_KEY}
       FORGE_REGION: ${FORGE_REGION:-intl}
-      FORGE_REALTIME_MODEL: ${FORGE_REALTIME_MODEL:-qwen3-omni-flash-realtime}
-      FORGE_VOICE: ${FORGE_VOICE:-Cherry}
+      FORGE_REALTIME_MODEL: ${FORGE_REALTIME_MODEL:-qwen3.5-omni-plus-realtime}
+      FORGE_VOICE: ${FORGE_VOICE:-Tina}
       # Alibaba Cloud OSS (assets + deployment proof)
       ALIBABA_CLOUD_ACCESS_KEY_ID: ${ALIBABA_CLOUD_ACCESS_KEY_ID}
       ALIBABA_CLOUD_ACCESS_KEY_SECRET: ${ALIBABA_CLOUD_ACCESS_KEY_SECRET}
