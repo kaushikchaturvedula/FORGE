@@ -30,6 +30,11 @@ export function ModelPanel({ cmd }: { cmd: ModelCmd }) {
   useEffect(() => {
     const mount = mountRef.current;
     if (!mount) return;
+    // StrictMode (and any remount) double-invokes this effect: setup → cleanup → setup. The GLB
+    // load is async, so a torn-down mount's load could resolve LAST and win the shared modelRef,
+    // pointing it at a pivot in a disposed scene (badge moves, mesh frozen). `cancelled` is
+    // closure-scoped per invocation, so only the LIVE mount's load populates modelRef.
+    let cancelled = false;
     const scene = new THREE.Scene();
     scene.background = new THREE.Color("#0d1117");
 
@@ -79,6 +84,18 @@ export function ModelPanel({ cmd }: { cmd: ModelCmd }) {
       new GLTFLoader().load(
         MODEL_URL,
         (gltf) => {
+          if (cancelled) {
+            // This mount was torn down before the load resolved — drop it (and free its GPU
+            // resources) so it never wins the shared modelRef from a disposed scene.
+            gltf.scene.traverse((o) => {
+              const mesh = o as THREE.Mesh;
+              mesh.geometry?.dispose?.();
+              const mat = mesh.material as THREE.Material | THREE.Material[] | undefined;
+              if (Array.isArray(mat)) mat.forEach((m) => m.dispose());
+              else mat?.dispose();
+            });
+            return;
+          }
           const model = gltf.scene;
           // Center + frame the model so it fills the view regardless of its native scale.
           const box = new THREE.Box3().setFromObject(model);
@@ -105,6 +122,7 @@ export function ModelPanel({ cmd }: { cmd: ModelCmd }) {
         },
         undefined,
         (err) => {
+          if (cancelled) return; // torn-down mount — stop retrying
           if (tries < RETRY_DELAYS.length) {
             const delay = RETRY_DELAYS[tries];
             tries += 1;
@@ -120,6 +138,7 @@ export function ModelPanel({ cmd }: { cmd: ModelCmd }) {
     attemptLoad();
 
     return () => {
+      cancelled = true;
       cancelAnimationFrame(raf);
       if (retryTimer) clearTimeout(retryTimer);
       ro.disconnect();
