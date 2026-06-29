@@ -106,7 +106,12 @@ function applyMsg(s: State, m: ServerMessage): State {
       return { ...s, partialAssistant: "", conv: "listening" };
     case "panel": {
       const prev = s.panels[m.panel] || {};
-      return { ...s, panels: { ...s.panels, [m.panel]: { ...prev, ...m.data } }, visible: { ...s.visible, [m.panel]: true } };
+      // Procedures AND safety share the "procedure" panel and each handler sends a FULL
+      // self-contained view — REPLACE it so stale completed/complete/items/steps never leak
+      // across checklists or across complete→restart. Other panels (schematic's partial
+      // `navigate` updates) keep the shallow merge.
+      const data = m.panel === "procedure" ? m.data : { ...prev, ...m.data };
+      return { ...s, panels: { ...s.panels, [m.panel]: data }, visible: { ...s.visible, [m.panel]: true } };
     }
     case "alert":
       return { ...s, alerts: [m, ...s.alerts].slice(0, 6) };
@@ -328,6 +333,30 @@ export function useRealtimeSocket(config: RuntimeConfig | null) {
     const id = window.setInterval(() => dispatch({ k: "tick" }), 1000);
     return () => window.clearInterval(id);
   }, [state.conn]);
+
+  // Checklist completion: show the ✅ ~5s, then auto-hide the panel and raise a green toast.
+  const completeShown = useRef(false);
+  useEffect(() => {
+    const proc = state.panels.procedure;
+    const done = !!proc?.complete;
+    if (!done) { completeShown.current = false; return; }
+    if (completeShown.current) return;
+    completeShown.current = true;
+    const title = proc?.title || "Checklist";
+    const t = window.setTimeout(() => {
+      dispatch({ k: "msg", m: { type: "control", action: "hide_panel", panel: "procedure" } as unknown as ServerMessage });
+      dispatch({ k: "msg", m: { type: "alert", level: "success", message: `${title} complete — all items done.` } as unknown as ServerMessage });
+    }, 5000);
+    return () => window.clearTimeout(t);
+  }, [state.panels.procedure]);
+
+  // Success toasts auto-dismiss after a few seconds (warn/alert persist until dismissed).
+  useEffect(() => {
+    const i = state.alerts.findIndex((a) => a.level === "success");
+    if (i < 0) return;
+    const t = window.setTimeout(() => dispatch({ k: "dismissAlert", i }), 4000);
+    return () => window.clearTimeout(t);
+  }, [state.alerts]);
 
   useEffect(() => () => disconnect(), [disconnect]);
 

@@ -23,7 +23,7 @@ MEASUREMENT_TYPES = {
     "air_temperature",
     "process_temperature",
 }
-STEP_ACTIONS = {"next", "previous", "repeat", "back", "goto", "complete"}
+STEP_ACTIONS = {"next", "previous", "repeat", "back", "goto", "complete", "uncomplete", "reset"}
 NAV_ACTIONS = {"jump", "zoom_in", "zoom_out", "pan", "reset", "toggle_layer"}
 PANELS = {
     "schematic",
@@ -170,6 +170,11 @@ def validate(tool_name: str, args: dict) -> ValidationResult:
             return _reject("Which step number should I go to?")
         if action == "complete" and not _is_positive_int(args.get("through")):
             return _reject("How many steps should I mark complete?")
+        if action == "uncomplete" and args.get("through") is not None:
+            try:
+                int(args.get("through"))
+            except (TypeError, ValueError):
+                return _reject("How many steps should stay marked complete?")
         return _OK
 
     if tool_name in ("show_panel", "hide_panel"):

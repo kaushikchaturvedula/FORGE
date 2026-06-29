@@ -159,8 +159,6 @@ def build_ui_state(state: SessionState) -> str:
     """A compact, truthful summary of what's currently on the dashboard — injected to the
     model so it answers 'what's on screen?' from fact and never claims an absent panel."""
     panels = state.visible_panels
-    if not panels:
-        return "nothing is displayed on the dashboard right now."
     parts: list[str] = []
     for p in sorted(panels):
         if p == "schematic":
@@ -175,13 +173,17 @@ def build_ui_state(state: SessionState) -> str:
             parts.append(s)
         elif p == "procedure":
             ap, asf = state.active_procedure, state.active_safety
-            if ap:
+            if ap and ap.get("complete"):
+                parts.append(f"the {ap.get('title', '')} procedure is complete (all {len(ap.get('steps', []))} steps done)")
+            elif ap:
                 steps = ap.get("steps", [])
                 i = ap.get("index", 0)
                 cur = steps[i].get("text") if 0 <= i < len(steps) else ""
                 done = sorted(d + 1 for d in ap.get("completed", set()))
                 done_str = f", steps {', '.join(map(str, done))} done" if done else ""
                 parts.append(f"the {ap.get('title', '')} procedure (on step {i + 1} of {len(steps)}{done_str}: '{cur}')")
+            elif asf and asf.get("complete"):
+                parts.append(f"the {asf.get('title', '')} safety checklist is complete (all {len(asf.get('items', []))} items done)")
             elif asf:
                 items = asf.get("items", [])
                 i = asf.get("index", 0)
@@ -196,7 +198,14 @@ def build_ui_state(state: SessionState) -> str:
                          f"Z {int(r.get('z', 0))}°)")
         elif p in _PANEL_PHRASE:
             parts.append(_PANEL_PHRASE[p])
-    return "showing " + ", ".join(parts) + "." if parts else "nothing is displayed."
+    # A just-finished checklist auto-hides its panel — keep the agent AWARE it's done (so it never
+    # says "you're on step one" after completion), even when nothing else is on screen.
+    lc = state.last_completed
+    if lc and "procedure" not in panels:
+        parts.append(f"the {lc.get('title', '')} {lc.get('kind', '')} checklist is complete (all items done)")
+    if not parts:
+        return "nothing is displayed on the dashboard right now."
+    return "showing " + ", ".join(parts) + "."
 
 
 def build_resume_summary(state: SessionState) -> str:

@@ -269,6 +269,21 @@ def test_build_ui_state_includes_checklist_position():
     assert "on item 2 of" in out2 and "items 1" in out2 and "confirmed" in out2
 
 
+def test_build_ui_state_reports_completed_checklist():
+    # After completion the panel auto-hides — the agent must STILL know it's done (never say
+    # "you're on step one"). Awareness comes from last_completed even with nothing on screen.
+    from app.ws.gateway import build_ui_state
+    from app.agents.session_state import SessionState
+    from app.agents.tools.handlers import start_procedure, procedure_step
+
+    s = SessionState()
+    start_procedure(s, {"procedure_id": "tool_change"})
+    procedure_step(s, {"action": "complete", "through": len(s.active_procedure["steps"])})
+    assert "procedure" not in s.visible_panels  # auto-hidden
+    out = build_ui_state(s)
+    assert "complete" in out and "step one" not in out.lower()
+
+
 def test_procedure_step_auto_logs_each_step():
     from app.agents.tools.handlers import start_procedure, procedure_step
     from app.agents.session_state import SessionState

@@ -71,7 +71,10 @@ def test_safety_checklist_completes_after_all_items(state):
     for _ in range(total):
         last = run(state, "run_safety_check", {"check_type": "loto", "action": "confirm"})
     assert last.output.get("complete") is True
-    assert state.active_safety is None
+    # RETAINED (not nulled) so it stays re-showable + the agent stays aware (the panel shows ✅,
+    # then the frontend auto-hides it).
+    assert state.active_safety["complete"] is True
+    assert state.last_completed == {"kind": "safety", "title": state.active_safety["title"]}
     # each confirmation was logged (human-in-the-loop trail)
     assert sum(1 for e in state.work_log if e["type"] == "safety_confirm") == total
 
@@ -128,7 +131,45 @@ def test_procedure_complete_through_total_finishes(state):
     total = len(state.active_procedure["steps"])
     r = run(state, "procedure_step", {"action": "complete", "through": total})
     assert r.output.get("complete") is True
-    assert state.active_procedure is None
+    # RETAINED (not nulled) so it can be re-shown + the agent stays aware (panel shows ✅, then
+    # the frontend auto-hides it).
+    assert state.active_procedure["complete"] is True
+    assert state.last_completed == {"kind": "procedure", "title": state.active_procedure["title"]}
+
+
+def test_procedure_uncomplete_reset_and_no_gap_after_goto(state):
+    run(state, "start_procedure", {"procedure_id": "tool_change"})  # 7 steps
+    run(state, "procedure_step", {"action": "complete", "through": 3})
+    assert state.active_procedure["completed"] == {0, 1, 2}
+    # uncomplete walks the prefix back (stays contiguous)
+    run(state, "procedure_step", {"action": "uncomplete", "through": 1})
+    assert state.active_procedure["completed"] == {0}
+    # goto then next never creates a gap: cursor is ahead of the frontier -> advance, no mark
+    run(state, "procedure_step", {"action": "goto", "step": 5})       # 0-based index 4
+    r = run(state, "procedure_step", {"action": "next"})              # frontier=1, index 4 != 1
+    assert state.active_procedure["completed"] == {0}                 # unchanged — no out-of-order
+    assert state.active_procedure["index"] == 5
+    assert r.output.get("unmarked_steps")                             # agent is told steps are unmarked
+    # reset clears everything
+    run(state, "procedure_step", {"action": "reset"})
+    assert state.active_procedure["completed"] == set()
+    assert state.active_procedure["index"] == 0 and state.active_procedure["complete"] is False
+    assert state.last_completed is None
+
+
+def test_completed_procedure_is_frozen_until_reset(state):
+    run(state, "start_procedure", {"procedure_id": "tool_change"})
+    total = len(state.active_procedure["steps"])
+    run(state, "procedure_step", {"action": "complete", "through": total})  # finished + retained
+    # any navigation/completion verb NO-OPs on a finished checklist (A5: agent asks to reset)
+    r = run(state, "procedure_step", {"action": "next"})
+    assert r.output.get("complete") is True
+    assert state.active_procedure["complete"] is True
+    r2 = run(state, "procedure_step", {"action": "goto", "step": 2})
+    assert r2.output.get("complete") is True
+    # only reset revives it
+    run(state, "procedure_step", {"action": "reset"})
+    assert state.active_procedure["complete"] is False and state.active_procedure["index"] == 0
 
 
 # ── safety: strict, per-item, operator-asserted ──────────────────────────────
@@ -145,6 +186,37 @@ def test_safety_out_of_enum_action_does_not_advance(state):
     # an out-of-enum action returns the CURRENT item without advancing (strict by omission)
     run(state, "run_safety_check", {"check_type": "loto", "action": "goto"})
     assert state.active_safety["index"] == 0
+
+
+def test_safety_view_carries_completed_prefix_no_leak(state):
+    # A1: safety sends its own authoritative completed prefix (= confirmed items before cursor),
+    # so a fresh safety check never inherits a prior procedure's "done" ticks.
+    run(state, "start_procedure", {"procedure_id": "tool_change"})
+    run(state, "procedure_step", {"action": "complete", "through": 3})  # procedure has 3 done
+    start = run(state, "run_safety_check", {"check_type": "loto"})
+    assert start.panel["data"]["completed"] == []                       # safety starts with 0 done
+    nxt = run(state, "run_safety_check", {"check_type": "loto", "action": "confirm"})
+    assert nxt.panel["data"]["completed"] == [0]                        # exactly the confirmed prefix
+
+
+def test_safety_reset_restarts_from_item_one(state):
+    run(state, "run_safety_check", {"check_type": "loto"})
+    run(state, "run_safety_check", {"check_type": "loto", "action": "confirm"})
+    assert state.active_safety["index"] == 1
+    run(state, "run_safety_check", {"check_type": "loto", "action": "reset"})
+    assert state.active_safety["index"] == 0 and state.active_safety["complete"] is False
+
+
+def test_completed_safety_check_is_frozen_until_reset(state):
+    run(state, "run_safety_check", {"check_type": "loto"})
+    for _ in range(len(state.active_safety["items"])):
+        run(state, "run_safety_check", {"check_type": "loto", "action": "confirm"})
+    assert state.active_safety["complete"] is True
+    idx_before = state.active_safety["index"]
+    r = run(state, "run_safety_check", {"check_type": "loto", "action": "confirm"})  # no-op
+    assert r.output.get("complete") is True and state.active_safety["index"] == idx_before
+    run(state, "run_safety_check", {"check_type": "loto", "action": "reset"})        # revive
+    assert state.active_safety["complete"] is False and state.active_safety["index"] == 0
 
 
 # ── schematic navigation ─────────────────────────────────────────────────────

@@ -91,14 +91,24 @@ generate_report, prepare_handoff.
 - PROCEDURES (flexible): only call start_procedure when the tech explicitly asks to START or
   SEE a procedure. Logging that a task is COMPLETE ("log that I finished the tool change") is a
   log_event ONLY — do NOT start or display that procedure's checklist. Once a procedure is up:
-  - NAVIGATE (read-only, completes NOTHING): "go to step four" / "show me the last step" (last
-    = the total) → procedure_step{goto, step:N}, then read it. "next" / "done with this step"
-    → procedure_step{next}.
-  - OPERATOR-ASSERTED COMPLETION: "I've done steps one through three, move to four" →
-    procedure_step{complete, through:3, goto_step:4}. You only RECORD what the operator asserts;
-    you never verify a step yourself.
+  - READ vs NAVIGATE (critical): READING a step's content ("read step four", "what's step four",
+    "what does the current step say") is spoken from FORGE DATA / SCREEN STATE with NO tool call
+    — NEVER call goto just to read. Only NAVIGATION verbs (go to / move to / jump to / take me to
+    / advance to / show me on the checklist / highlight) call procedure_step{goto, step:N}, then
+    you read it.
+  - COMPLETION (operator-asserted): "next" / "done with this step" → procedure_step{next}. "I've
+    done steps one through three, move to four" → procedure_step{complete, through:3, goto_step:4}.
+    You only RECORD what the operator asserts; you never verify a step yourself.
+  - UNMARK / RESET: "step three isn't actually done, undo it" → procedure_step{uncomplete,
+    through:2}. "reset / start it over" → procedure_step{reset}.
+  - IN ORDER ONLY: steps complete as a contiguous run — you can mark THROUGH a step, never skip
+    one. "mark five done but leave four" → refuse: "I can mark through a step, not skip one —
+    through five, or just move to five?"
   - AMBIGUOUS forward/backward ("move ahead a bit", "go back some") → ask ONE clarifying
     question ("Which step?") and do NOT move or complete.
+  - ALREADY COMPLETE: if SCREEN STATE says a checklist is complete and they ask to pull it up
+    again, RE-SHOW it (show_panel{procedure}) and ASK before resetting — never silently start
+    over. Only on "yes / reset / run it again" → procedure_step{reset}.
   - Teaching contrast: "move to step three" = navigate ONLY (don't mark 1–2 done); "I've
     completed one and two, move to three" = complete 1–2 AND move.
 
@@ -148,26 +158,43 @@ SAFETY (critical):
   in FORGE DATA and the current one in SCREEN STATE — read the named item aloud with no cursor
   move, no completion, and NO tool call.
 
-CHECKLIST EXAMPLES (read vs navigate vs complete — spoken request → action):
-- "Read aloud item three from the checklist" → read item three's text aloud only; no move, no
-  completion, no tool call.
-- "What does the current step say?" → read the current item aloud; nothing else.
-- (procedure) "Move to step three" → procedure_step{goto, step:3}; read step three; do NOT mark
-  one and two done; say "You're on step three."
-- (procedure) "Skip to the last step" → procedure_step{goto, step:<total>}; no completion.
-- (procedure) "Mark the first two items as completed" → procedure_step{complete, through:2,
-  goto_step:3}; say "Marked steps one and two complete per your confirmation, now on step three."
-- (procedure) "I've done steps one through three, move to four" → procedure_step{complete,
-  through:3, goto_step:4}; confirm what was recorded.
-- (procedure) "Move ahead a bit" → ask "Which step would you like to go to?"; do NOT move.
-- (safety) "Read item three of the safety checklist" → read item three aloud only (reading is
-  always allowed).
-- (safety) "Move to the third item" / "Skip to item three" → REFUSE: safety items are confirmed
-  one at a time and can't be skipped; stay on the current item.
-- (safety) "Mark the first two as completed" / "Confirm all of them" → REFUSE bulk completion;
-  offer to confirm the current item one at a time.
-- (safety) "Confirmed" → run_safety_check{confirm} for the CURRENT item only; it logs that item
-  and advances exactly one.
+CHECKLIST EXAMPLES (spoken request → action; when to call a tool, speak only, or ask):
+READ (speak only, NO tool):
+- "read me step four" → [no tool] read step four's text aloud.
+- "what's the first step?" / "what does the current step say again?" → [no tool] read that step aloud.
+- "what's item three on the safety check?" → [no tool] read item three (reading is allowed even in safety).
+NAVIGATE (cursor only, NO completion):
+- "go to step four" → procedure_step{goto, step:4} → "You're on step four: …". (Contrast: "read me step four" = NO tool.)
+- "jump to the last step" → procedure_step{goto, step:<total>}. "take me back to step one" → procedure_step{goto, step:1}.
+- "show me step five on the checklist" / "highlight step five" → procedure_step{goto, step:5}.
+COMPLETE:
+- "next" / "done with this one" → procedure_step{next} → "Marked step N done — on step N+1: …".
+- "I've done steps one through three, move to four" → procedure_step{complete, through:3, goto_step:4}.
+- "mark the first two as done" → procedure_step{complete, through:2}.
+UNMARK / RESET:
+- "actually step three isn't done, undo that" (1–3 were done) → procedure_step{uncomplete, through:2}
+  → "Unmarked — steps one and two remain complete."
+- "reset the checklist" / "start it over" → procedure_step{reset} → "Reset — all steps unmarked, back to step one."
+OUT-OF-ORDER (refuse):
+- "mark step five done but leave four" → [no tool] "Steps complete in order — I can mark through a step,
+  not skip one. Mark through five, or just move to five?"
+RE-PULL A COMPLETED CHECKLIST (ask before reset):
+- (already complete) "pull up the drawbar checklist again" → show_panel{panel:"procedure"}, [no reset]
+  "It's already marked complete — want me to reset it so you can go through the items again?"
+  Then "yes / reset / run it again" → procedure_step{reset}; "no, just wanted to see it" → leave it.
+AMBIGUOUS (clarify, never guess, never mark):
+- "move ahead a bit" / "go forward some" → [no tool] "Which step would you like to go to?"
+- "go back a bit" → [no tool] "Which step should I go back to?"
+SAFETY (strict — reading allowed; refuse bulk/skip/out-of-order):
+- "confirmed" → run_safety_check{confirm} → advance one. "read me item three" → [no tool] read it (no advance).
+- "confirm all" / "mark them all done" → [no tool] "Safety items are confirmed one at a time for your
+  protection — we're on item N: <text>. Confirm that and I'll move on."
+- "skip to the last item" → [no tool] refuse; restate the current item.
+AWARENESS (answer from SCREEN STATE, accurately):
+- "what's on screen?" → list exactly what SCREEN STATE says.
+- "what step am I on?" → "Step three of seven, steps one and two done."
+- (after completion) "is the checklist done?" → "Yes — the drawbar inspection is complete, all seven steps.
+  Want me to reset it to run again?"
 
 """
 

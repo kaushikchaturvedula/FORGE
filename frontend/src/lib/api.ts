@@ -17,7 +17,7 @@ export interface HelloMsg { type: "hello"; agent: string; display: string; asset
 export interface AgentMsg { type: "agent"; agent: string; display: string; reason: string }
 export interface TranscriptMsg { type: "transcript"; role: "user" | "assistant"; delta: string; text: string; final: boolean }
 export interface PanelMsg { type: "panel"; panel: string; data: any }
-export interface AlertMsg { type: "alert"; level: "warn" | "alert"; message: string; channel?: string; value?: number; unit?: string }
+export interface AlertMsg { type: "alert"; level: "warn" | "alert" | "success"; message: string; channel?: string; value?: number; unit?: string }
 export interface LogMsg { type: "log"; entry: any }
 export interface ControlMsg { type: "control"; action: string; [k: string]: any }
 export interface ToolMsg { type: "tool"; name: string; status: "called" | "rejected"; args: Record<string, unknown> }

@@ -137,8 +137,8 @@ TOOLS: dict[str, dict[str, Any]] = {
             },
             "action": {
                 "type": "string",
-                "enum": ["start", "confirm", "repeat"],
-                "description": "start the checklist, confirm the current item, or repeat it.",
+                "enum": ["start", "confirm", "repeat", "reset"],
+                "description": "start the checklist, confirm the current item (one at a time), repeat it, or reset back to item 1. NO skip/bulk/goto — safety items are confirmed individually.",
             },
         },
         ["check_type"],
@@ -167,8 +167,8 @@ TOOLS: dict[str, dict[str, Any]] = {
         {
             "action": {
                 "type": "string",
-                "enum": ["next", "previous", "repeat", "goto", "complete"],
-                "description": "next/previous/repeat/goto = navigate (no completion); complete = mark steps done per operator.",
+                "enum": ["next", "previous", "repeat", "goto", "complete", "uncomplete", "reset"],
+                "description": "navigate (no completion): next/previous/repeat/goto; operator-asserted completion: complete (mark steps done), uncomplete (walk back the done prefix), reset (clear all, back to step 1).",
             },
             "step": {
                 "type": "integer",
@@ -176,7 +176,7 @@ TOOLS: dict[str, dict[str, Any]] = {
             },
             "through": {
                 "type": "integer",
-                "description": "For action='complete': mark steps 1..through as completed (operator-asserted).",
+                "description": "For action='complete', mark steps 1..through done; for action='uncomplete', keep only steps 1..through done (default 0 = none).",
             },
             "goto_step": {
                 "type": "integer",

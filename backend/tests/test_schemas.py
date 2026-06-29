@@ -35,14 +35,15 @@ def test_every_tool_parameters_is_valid_json_schema():
 
 
 def test_run_safety_check_action_enum_is_strict():
-    # SAFETY stays strict-by-omission: NO skip/goto/bulk/complete on the safety tool.
+    # SAFETY stays strict: only start/confirm/repeat/reset — NO skip/goto/bulk/complete/uncomplete.
     enum = schemas.TOOLS["run_safety_check"]["function"]["parameters"]["properties"]["action"]["enum"]
-    assert enum == ["start", "confirm", "repeat"]
+    assert enum == ["start", "confirm", "repeat", "reset"]
+    assert not any(a in enum for a in ("goto", "complete", "uncomplete", "skip"))
 
 
 def test_procedure_step_action_enum_is_flexible():
     enum = schemas.TOOLS["procedure_step"]["function"]["parameters"]["properties"]["action"]["enum"]
-    assert "goto" in enum and "complete" in enum
+    assert all(a in enum for a in ("goto", "complete", "uncomplete", "reset"))
 
 
 def test_procedure_step_validate_requires_ints():

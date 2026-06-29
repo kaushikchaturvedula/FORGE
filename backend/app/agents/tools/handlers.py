@@ -208,19 +208,30 @@ def run_safety_check(state: SessionState, args: dict) -> ToolResult:
     key, check = catalog.resolve_check(args.get("check_type", ""))  # validated upstream
     action = str(args.get("action", "start")).lower()
 
-    if action == "start" or state.active_safety is None or state.active_safety.get("check_type") != key:
-        state.active_safety = {"check_type": key, "title": check.get("title"), "items": check.get("items", []), "index": 0, "hazard": check.get("hazard"), "completion": check.get("completion")}
-        state.add_log("safety", f"Started {check.get('title')} checklist")
+    # START / RESET: (re)begin at item 1, all unmarked. `reset` restarts the same check from the
+    # top; `start` (or a different check_type) initialises a fresh one. STRICT: no goto/bulk.
+    if action in ("start", "reset") or state.active_safety is None or state.active_safety.get("check_type") != key:
+        state.last_completed = None
+        state.active_safety = {"check_type": key, "title": check.get("title"), "items": check.get("items", []), "index": 0, "complete": False, "hazard": check.get("hazard"), "completion": check.get("completion")}
+        state.add_log("safety", f"{'Reset' if action == 'reset' else 'Started'} {check.get('title')} checklist")
         return _safety_view(state, spoken_prefix="Hazard: " + (check.get("hazard") or ""))
 
     active = state.active_safety
+
+    # GUARD (A2/A5): a completed checklist is frozen — confirm/repeat no-op; re-show so the agent
+    # can offer to reset. Only start/reset (above) clear `complete`.
+    if active.get("complete"):
+        return ToolResult(output={"check_type": key, "complete": True, "message": f"{active['title']} is already complete."},
+                          panel={"panel": "procedure", "data": {"mode": "safety", "complete": True, "title": active["title"]}},
+                          control={"action": "show_panel", "panel": "procedure"})
+
     items = active["items"]
     idx = active["index"]
 
     if action == "repeat":
         return _safety_view(state)
 
-    # action == "confirm": advance past the current item.
+    # action == "confirm": advance past the current item — strictly ONE at a time.
     if action == "confirm":
         confirmed_item = items[idx]
         entry = state.add_log("safety_confirm", f"Operator confirmed item {confirmed_item['n']} (asserted, not agent-verified): {confirmed_item['text']}", check_type=key, item=confirmed_item["n"])
@@ -228,10 +239,12 @@ def run_safety_check(state: SessionState, args: dict) -> ToolResult:
         if active["index"] >= len(items):
             completion = active.get("completion") or "Checklist complete."
             state.add_log("safety", f"{active['title']} complete")
-            state.active_safety = None
+            active["complete"] = True  # RETAIN (do not null) — re-showable + aware
+            state.visible_panels.discard("procedure")
+            state.last_completed = {"kind": "safety", "title": active["title"]}
             return ToolResult(
                 output={"check_type": key, "complete": True, "message": completion},
-                panel={"panel": "procedure", "data": {"mode": "safety", "title": check.get("title"), "complete": True, "message": completion}},
+                panel={"panel": "procedure", "data": {"mode": "safety", "title": active["title"], "complete": True, "message": completion}},
                 log=entry,
             )
         view = _safety_view(state, spoken_prefix="Confirmed. Next: ")
@@ -246,7 +259,7 @@ def _safety_view(state: SessionState, spoken_prefix: str = "") -> ToolResult:
     item = active["items"][active["index"]]
     return ToolResult(
         output={"check_type": active["check_type"], "item_number": item["n"], "total": len(active["items"]), "item": item["text"], "prompt": item.get("prompt"), "awaiting_confirmation": True, "spoken_prefix": spoken_prefix},
-        panel={"panel": "procedure", "data": {"mode": "safety", "title": active["title"], "items": active["items"], "index": active["index"], "hazard": active.get("hazard")}},
+        panel={"panel": "procedure", "data": {"mode": "safety", "id": active["check_type"], "title": active["title"], "items": active["items"], "index": active["index"], "completed": list(range(active["index"])), "hazard": active.get("hazard")}},
         control={"action": "show_panel", "panel": "procedure"},
     )
 
@@ -254,7 +267,8 @@ def _safety_view(state: SessionState, spoken_prefix: str = "") -> ToolResult:
 # ── procedures ───────────────────────────────────────────────────────────────
 def start_procedure(state: SessionState, args: dict) -> ToolResult:
     key, proc = catalog.resolve_procedure(args.get("procedure_id", ""))  # validated upstream
-    state.active_procedure = {"procedure_id": key, "title": proc.get("title"), "steps": proc.get("steps", []), "index": 0, "completed": set(), "warnings": proc.get("warnings", [])}
+    state.last_completed = None  # fresh checklist — clear any prior completion awareness
+    state.active_procedure = {"procedure_id": key, "title": proc.get("title"), "steps": proc.get("steps", []), "index": 0, "completed": set(), "complete": False, "warnings": proc.get("warnings", [])}
     state.add_log("procedure", f"Started procedure: {proc.get('title')}")
     return _procedure_view(state)
 
@@ -268,10 +282,33 @@ def procedure_step(state: SessionState, args: dict) -> ToolResult:
     last = len(steps) - 1
     completed: set = proc.setdefault("completed", set())
 
+    def _completed_view() -> ToolResult:
+        # Re-show a FINISHED checklist without mutating it (A5: the agent asks before reset).
+        title = proc["title"]
+        return ToolResult(output={"complete": True, "message": f"{title} is already complete."},
+                          panel={"panel": "procedure", "data": {"mode": "procedure", "complete": True, "title": title}},
+                          control={"action": "show_panel", "panel": "procedure"})
+
+    if action == "reset":
+        # The ONLY way out of a complete checklist: fresh step 1, all unmarked.
+        proc["completed"] = completed = set()
+        proc["index"] = 0
+        proc["complete"] = False
+        state.last_completed = None
+        state.add_log("procedure", f"Reset procedure: {proc['title']}")
+        return _procedure_view(state)
+
+    # GUARD (A2/A5): a completed checklist is frozen — never advance/mutate it; re-show so the
+    # agent can offer to reset. Only `reset` (above) and start_procedure clear `complete`.
+    if proc.get("complete"):
+        return _completed_view()
+
     def _finish() -> ToolResult:
         title = proc["title"]
         state.add_log("procedure", f"Completed procedure: {title}")
-        state.active_procedure = None
+        proc["complete"] = True                       # RETAIN (do not null) — re-showable + aware
+        state.visible_panels.discard("procedure")
+        state.last_completed = {"kind": "procedure", "title": title}
         return ToolResult(output={"complete": True, "message": f"{title} complete."},
                           panel={"panel": "procedure", "data": {"mode": "procedure", "complete": True, "title": title}})
 
@@ -280,10 +317,17 @@ def procedure_step(state: SessionState, args: dict) -> ToolResult:
         proc["index"] = max(0, min(last, int(args.get("step", proc["index"] + 1)) - 1))
         return _procedure_view(state)
 
+    if action == "uncomplete":
+        # Walk the completed PREFIX back to {0..N-1} (default N=0 -> none). Stays contiguous.
+        n = max(0, min(len(steps), int(args.get("through", 0))))
+        proc["completed"] = completed = set(range(n))
+        state.add_log("procedure_step", f"Unmarked steps after {n} per operator", step=n)
+        return _procedure_view(state)
+
     if action == "complete":
-        # Operator-asserted bulk completion (NOT agent-verified): mark steps 1..through done.
+        # Operator-asserted prefix completion (NOT agent-verified): completed = {0..through-1}.
         through = max(0, min(len(steps), int(args.get("through", 0))))
-        completed.update(range(through))
+        proc["completed"] = completed = set(range(through))
         entry = state.add_log("procedure_step",
                               f"Steps 1–{through} complete per operator (operator-asserted, not agent-verified)",
                               step=through)
@@ -298,18 +342,29 @@ def procedure_step(state: SessionState, args: dict) -> ToolResult:
         return view
 
     if action == "next":
-        completed.add(proc["index"])  # operator asserts the current step is done
-        done = steps[proc["index"]]
-        entry = state.add_log("procedure_step",
-                              f"Step {done.get('n')} done per operator (operator-asserted, not agent-verified): {done.get('text')}",
-                              step=done.get("n"))
-        if proc["index"] >= last:
-            res = _finish()
-            res.log = entry
-            return res
-        proc["index"] += 1
+        frontier = len(completed)  # completed is ALWAYS {0..frontier-1}
+        if proc["index"] == frontier:
+            # operator asserts the frontier step done -> grow the prefix (a gap is impossible)
+            completed.add(proc["index"])
+            done = steps[proc["index"]]
+            entry = state.add_log("procedure_step",
+                                  f"Step {done.get('n')} done per operator (operator-asserted, not agent-verified): {done.get('text')}",
+                                  step=done.get("n"))
+            if len(completed) >= len(steps):
+                res = _finish()
+                res.log = entry
+                return res
+            proc["index"] = min(last, proc["index"] + 1)
+            view = _procedure_view(state)
+            view.log = entry  # surface the completed step to the live work-order feed
+            return view
+        # Cursor is behind the frontier (already done) or ahead of it (moved via goto) -> advance
+        # the cursor only, NEVER marking out of order. Surface any not-yet-marked steps.
+        proc["index"] = min(last, proc["index"] + 1)
         view = _procedure_view(state)
-        view.log = entry  # surface the completed step to the live work-order feed
+        unmarked = [i + 1 for i in range(proc["index"]) if i not in completed]
+        if unmarked:
+            view.output["unmarked_steps"] = unmarked
         return view
 
     if action in ("previous", "back"):
@@ -322,7 +377,7 @@ def _procedure_view(state: SessionState) -> ToolResult:
     step = proc["steps"][proc["index"]]
     return ToolResult(
         output={"procedure_id": proc["procedure_id"], "step_number": step.get("n"), "total": len(proc["steps"]), "step": step.get("text"), "warning": step.get("warning"), "expect": step.get("expect")},
-        panel={"panel": "procedure", "data": {"mode": "procedure", "title": proc["title"], "steps": proc["steps"], "index": proc["index"], "completed": sorted(proc.get("completed", set())), "warnings": proc["warnings"]}},
+        panel={"panel": "procedure", "data": {"mode": "procedure", "id": proc["procedure_id"], "title": proc["title"], "steps": proc["steps"], "index": proc["index"], "completed": sorted(proc.get("completed", set())), "warnings": proc["warnings"]}},
         control={"action": "show_panel", "panel": "procedure"},
     )
 

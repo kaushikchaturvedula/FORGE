@@ -28,6 +28,7 @@ class SessionState:
     photos: list[dict[str, Any]] = field(default_factory=list)
     active_procedure: dict[str, Any] | None = None
     active_safety: dict[str, Any] | None = None
+    last_completed: dict[str, Any] | None = None  # {kind, title} of a just-finished checklist (awareness after auto-hide)
     diagnosis: dict[str, Any] | None = None  # latest background-agent diagnosis (for readback)
     active_agent: str = "orchestrator"
     vision_active: bool = False
