@@ -12,7 +12,8 @@
   </style>
 
   <rect class="frame" x="8" y="8" width="784" height="584" rx="8"/>
-  <text class="lbl" x="24" y="38" font-size="18">PL45LM — Spindle Assembly (BT40)</text>
+  <!-- Title is rendered by the panel header (SchematicPanel data.title); not baked here, to
+       avoid a duplicate that could clip. -->
   <text class="cap" x="24" y="58">Synthetic schematic · vertical cartridge, top → tool nose</text>
 
   <line class="axis" x1="400" y1="90" x2="400" y2="560"/>

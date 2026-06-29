@@ -37,12 +37,11 @@ export function SchematicPanel({ data }: { data: SchematicData }) {
       return;
     }
     if (nav.action === "jump" && nav.bbox && nav.center) {
-      const pad = 1.9; // zoom window = bbox padded
-      const w = Math.min(vw, Math.max(nav.bbox.w * pad, vw / 2.4));
-      const h = Math.min(vh, Math.max(nav.bbox.h * pad, vh / 2.4));
-      const x = Math.max(0, Math.min(vw - w, nav.center.x - w / 2));
-      const y = Math.max(0, Math.min(vh - h, nav.center.y - h / 2));
-      setViewBox(`${x} ${y} ${w} ${h}`);
+      // Keep the FULL diagram visible (no zoom) and mark the component with the pulsing
+      // highlight rect. Zooming to a sub-region used to crop the baked SVG text into garbled
+      // edge fragments ("ly (BT40)", "Coolant union" cut off); showing the whole diagram keeps
+      // every label readable while the rect indicates the part.
+      setViewBox(`0 0 ${vw} ${vh}`);
       setHighlight(nav);
     } else if (nav.action === "zoom_out") {
       setViewBox(`0 0 ${vw} ${vh}`);
