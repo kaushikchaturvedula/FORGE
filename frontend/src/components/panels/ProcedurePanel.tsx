@@ -5,6 +5,10 @@ export function ProcedurePanel({ data }: { data: any }) {
   const isSafety = data.mode === "safety";
   const items: any[] = isSafety ? data.items || [] : data.steps || [];
   const index = data.index ?? 0;
+  // PROCEDURES send an explicit operator-asserted `completed` set; SAFETY has none, so it falls
+  // back to sequential positional rendering (i < index).
+  const hasCompleted = Array.isArray(data.completed);
+  const completed = new Set<number>(data.completed || []);
 
   if (data.complete) {
     return (
@@ -21,7 +25,7 @@ export function ProcedurePanel({ data }: { data: any }) {
       <div className="mb-2 flex items-center justify-between">
         <span className="text-sm font-semibold text-forge-text">{data.title}</span>
         <span className="text-xs text-forge-muted">
-          {index + 1} / {items.length}
+          step {index + 1} of {items.length}{hasCompleted ? ` · ${completed.size} done` : ""}
         </span>
       </div>
 
@@ -39,7 +43,7 @@ export function ProcedurePanel({ data }: { data: any }) {
       <ol className="flex min-h-0 flex-1 flex-col gap-1 overflow-auto">
         {items.map((step, i) => {
           const current = i === index;
-          const done = i < index;
+          const done = hasCompleted ? completed.has(i) : i < index;
           return (
             <li
               key={i}
