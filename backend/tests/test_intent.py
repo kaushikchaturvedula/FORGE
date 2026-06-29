@@ -82,6 +82,18 @@ def test_record_log_photo_and_machine_switch():
     assert ("hide_panel", {"panel": "machine_data"}) in infer_tools("this is a different machine now", {})
 
 
+def test_log_note_drops_filler_fragment_but_keeps_short_substantive():
+    from app.agents.intent import _parse_log_note
+    # ASR splits "...log that for me" -> the trailing politeness must NOT become a phantom note
+    assert _parse_log_note("i changed the tool, log that for me") is None
+    assert _parse_log_note("log that please") is None
+    # a real note still logs, including a legit SHORT one (no word-count cutoff)
+    assert _parse_log_note("log that the coolant line was replaced") == "the coolant line was replaced"
+    assert _parse_log_note("log that coolant low") == "coolant low"
+    assert ("log_event", {"event_type": "note", "note": "coolant low"}) in infer_tools("log that coolant low", {})
+    assert not any(n == "log_event" for n, _ in infer_tools("i changed the tool, log that for me", {}))
+
+
 # ── regression guards (from the adversarial review) ─────────────────────────
 def test_temperature_in_degrees_still_records():
     # "degrees" must NOT suppress a temperature measurement (only a real rotate does).

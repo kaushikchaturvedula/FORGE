@@ -196,10 +196,22 @@ def _parse_measurement(t: str) -> dict | None:
     return {"type": mtype, "value": float(num.group(1)), "unit": unit}
 
 
+# Politeness/pronoun fillers that are NOT a substantive log note on their own. ASR often splits
+# "...log that for me" so the trailing "for me" arrives as a phantom note.
+_LOG_FILLER = frozenset({"for", "me", "please", "thanks", "thank", "you", "it", "that", "this", "them"})
+
+
 def _parse_log_note(t: str) -> str | None:
     for trigger in ("log that ", "make a note that ", "note that ", "log a note that ",
                     "for the record, ", "log the following ", "log: "):
         if trigger in t:
             note = t.split(trigger, 1)[1].strip()
-            return note[:200] if note else None
+            if len(note) < 2:
+                return None  # char-floor backstop
+            # Drop a fragment whose every token is filler ("for me", "please", "it") — but keep
+            # any note with a substantive word, so legit short notes ("coolant low", "door open").
+            tokens = re.findall(r"[a-z0-9']+", note.lower())
+            if not tokens or all(tok in _LOG_FILLER for tok in tokens):
+                return None
+            return note[:200]
     return None
