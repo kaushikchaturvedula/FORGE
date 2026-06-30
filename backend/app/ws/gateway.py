@@ -423,6 +423,55 @@ class RealtimeBridge:
                         logger.info("closed idle realtime session (vision off, not talking)")
                     except Exception as exc:  # noqa: BLE001
                         logger.debug("idle close: %r", exc)
+            elif action == "resync":
+                # After a reconnect the client re-asserts the on-screen UI — rebuild SessionState
+                # from it so the server's SCREEN STATE matches the screen, then re-inject.
+                self._apply_resync(payload.get("state") or {})
+                await self._inject_ui_state(force=True)
+
+    def _apply_resync(self, snap: dict) -> None:
+        """Rebuild SessionState (visible panels, rotation, active checklist/schematic/highlight)
+        from a client snapshot after a reconnect — re-resolving checklists/diagrams by id via the
+        catalog. Best-effort: an unresolvable/missing field just stays cleared."""
+        st = self.orch.state
+        visible = snap.get("visible")
+        if isinstance(visible, list):
+            st.visible_panels = {str(p) for p in visible}
+        rot = snap.get("model_rotation")
+        if isinstance(rot, dict):
+            st.model_rotation = {ax: int(rot.get(ax, 0)) for ax in ("x", "y", "z")}
+        st.active_procedure = st.active_safety = st.last_completed = None
+        proc = snap.get("procedure") or {}
+        resolved = catalog.resolve_procedure(proc["id"]) if proc.get("id") else None
+        if resolved:
+            key, p = resolved
+            steps = p.get("steps", [])
+            n = max(0, min(len(steps), int(proc.get("completed_count", 0))))
+            st.active_procedure = {"procedure_id": key, "title": p.get("title"), "steps": steps,
+                                   "index": max(0, min(max(0, len(steps) - 1), int(proc.get("index", 0)))),
+                                   "completed": set(range(n)), "complete": bool(proc.get("complete")),
+                                   "warnings": p.get("warnings", [])}
+            if proc.get("complete"):
+                st.last_completed = {"kind": "procedure", "title": p.get("title")}
+        saf = snap.get("safety") or {}
+        resolved = catalog.resolve_check(saf["check_type"]) if saf.get("check_type") else None
+        if resolved:
+            key, c = resolved
+            items = c.get("items", [])
+            st.active_safety = {"check_type": key, "title": c.get("title"), "items": items,
+                                "index": max(0, min(len(items), int(saf.get("index", 0)))),
+                                "complete": bool(saf.get("complete")), "hazard": c.get("hazard"),
+                                "completion": c.get("completion")}
+            if saf.get("complete"):
+                st.last_completed = {"kind": "safety", "title": c.get("title")}
+        st.active_schematic = st.schematic_focus = None
+        sch = snap.get("schematic") or {}
+        resolved = catalog.resolve_diagram(sch["diagram"]) if sch.get("diagram") else None
+        if resolved:
+            st.active_schematic = resolved[0]
+            st.schematic_focus = sch.get("focus")
+        st.active_highlight = snap.get("highlight") or None
+        logger.info("resync applied: panels=%s rot=%s", sorted(st.visible_panels), st.model_rotation)
 
     # ── downstream: Qwen -> browser (lazy connect + resume) ──────────────────
     async def _downstream(self) -> None:
@@ -826,9 +875,10 @@ class RealtimeBridge:
         # The model's free-form reply to the trigger plays first; step 0 runs on its ResponseDone.
 
     async def _advance_workflow(self) -> None:
-        """Run ONE workflow step at a safe point: execute its handler, then voice a grounded
-        line (create_response). The next ResponseDone advances the following step. A gated step
-        proposes + pauses and does NOT run its tool until the tech confirms."""
+        """Advance the workflow in AT MOST 2 spoken turns: run the whole run of consecutive
+        NON-gated steps SILENTLY (their tools + panels update live), accumulate their grounded
+        one-liners, and speak ONE consolidated summary (turn 1). The gated step then proposes +
+        pauses on the next ResponseDone (turn 2). The confirm gate is unchanged."""
         wf = self._workflow
         if wf is None or wf["paused"]:
             return
@@ -842,13 +892,21 @@ class RealtimeBridge:
                         wf["name"], wf["index"], step.tool)
             await self._speak_workflow_line(step)  # propose; the tool runs only on confirm
             return
-        if step.special == "diagnosis":
-            self._schedule_diagnosis("workflow", "workflow", self._diagnosis_inputs([]))
-        elif step.tool:
-            await self._apply_tool(step.tool, dict(step.args))
-        logger.info("workflow %s step %d: %s", wf["name"], wf["index"], step.tool or step.special)
-        wf["index"] += 1
-        await self._speak_workflow_line(step)
+        # Run every consecutive non-gated step SILENTLY (no per-step create_response), collecting
+        # each step's grounded one-liner; then voice them as ONE update.
+        facts: list[str] = []
+        while wf["index"] < len(wf["steps"]) and not wf["steps"][wf["index"]].gate:
+            s = wf["steps"][wf["index"]]
+            if s.special == "diagnosis":
+                self._schedule_diagnosis("workflow", "workflow", self._diagnosis_inputs([]))
+            elif s.tool:
+                await self._apply_tool(s.tool, dict(s.args))
+            logger.info("workflow %s step %d (silent): %s", wf["name"], wf["index"], s.tool or s.special)
+            if s.say:
+                facts.append(s.say)
+            wf["index"] += 1
+        if facts:
+            await self._speak_workflow_consolidated(facts)
 
     async def _workflow_confirm(self) -> None:
         """The tech confirmed at the gate — run the final (gated) step's tool, then complete."""
@@ -879,6 +937,18 @@ class RealtimeBridge:
             await self.session.create_response()
         except Exception as exc:  # noqa: BLE001
             logger.debug("workflow speak: %r", exc)
+
+    async def _speak_workflow_consolidated(self, facts: list[str]) -> None:
+        """Voice ONE consolidated update covering a run of silently-executed workflow steps."""
+        try:
+            await self.session.inject_message(
+                "AUTOPILOT WORKFLOW — give ONE short spoken update covering the following, in "
+                "order, as a few connected sentences (do not read a list): " + " ".join(facts),
+                role="system",
+            )
+            await self.session.create_response()
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("workflow consolidated speak: %r", exc)
 
     # ── helpers ──────────────────────────────────────────────────────────────
     def _remaining(self) -> int:

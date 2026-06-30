@@ -219,6 +219,16 @@ def test_completed_safety_check_is_frozen_until_reset(state):
     assert state.active_safety["complete"] is False and state.active_safety["index"] == 0
 
 
+# ── set_panels: show-only / hide-all-except ──────────────────────────────────
+def test_set_panels_shows_exactly_the_named_set(state):
+    run(state, "show_panel", {"panel": "model"})
+    run(state, "show_panel", {"panel": "machine_data"})
+    r = run(state, "set_panels", {"panels": ["work log", "schematic"]})  # aliases resolve
+    assert state.visible_panels == {"event_log", "schematic"}            # EXACTLY the keep-set
+    assert set(r.control["panels"]) == {"event_log", "schematic"}
+    assert r.control["action"] == "set_panels"
+
+
 # ── schematic navigation ─────────────────────────────────────────────────────
 def test_navigate_jump_to_drawbar_returns_geometry(state):
     run(state, "show_schematic", {"diagram_type": "spindle"})

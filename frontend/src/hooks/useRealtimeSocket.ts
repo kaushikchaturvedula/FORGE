@@ -148,6 +148,14 @@ function applyControl(s: State, action: string, payload: Record<string, unknown>
       if (p === "alert" || p === "alerts") return { ...s, alerts: [] };
       return { ...s, visible: { ...s.visible, [p]: false } };
     }
+    case "set_panels": {
+      // "show only X / hide everything except X": visibility becomes EXACTLY the named set.
+      const names = (payload.panels as string[]) || [];
+      const next: Record<string, boolean> = {};
+      for (const p of names) next[p] = true;
+      if (s.visionActive) next.vision = true;  // keep a voice/manually-activated camera up
+      return { ...s, visible: next };
+    }
     case "dismiss_alert":
       return { ...s, alerts: [] };
     // rotate_model / set_rotation carry the resulting ABSOLUTE rotation {x,y,z} — the mesh is SET
@@ -183,10 +191,32 @@ function applyControl(s: State, action: string, payload: Record<string, unknown>
   }
 }
 
+// Snapshot the on-screen UI for a reconnect resync (read flat from panels — the reducer stores
+// m.data directly under panels[panel]). Best-effort: only fields the server can re-resolve by id.
+function buildResync(s: State) {
+  const visible = Object.keys(s.visible).filter((k) => s.visible[k]);
+  const proc = s.panels.procedure || {};
+  const procedure = proc.mode === "procedure" && proc.id
+    ? { id: proc.id, index: proc.index ?? 0, completed_count: Array.isArray(proc.completed) ? proc.completed.length : 0, complete: !!proc.complete }
+    : null;
+  const safety = proc.mode === "safety" && proc.id
+    ? { check_type: proc.id, index: proc.index ?? 0, complete: !!proc.complete }
+    : null;
+  const sch = s.panels.schematic || {};
+  const schematic = sch.diagram_type ? { diagram: sch.diagram_type, focus: sch.navigate?.target ?? null } : null;
+  return {
+    type: "control" as const,
+    action: "resync",
+    state: { visible, model_rotation: s.modelCmd.rotation ?? { x: 0, y: 0, z: 0 }, procedure, safety, schematic, highlight: s.highlight?.component ?? null },
+  };
+}
+
 export type FrameProvider = () => string | null; // returns base64 JPEG, no data: prefix
 
 export function useRealtimeSocket(config: RuntimeConfig | null) {
   const [state, dispatch] = useReducer(reducer, initial);
+  const stateRef = useRef(state);
+  stateRef.current = state;  // always-fresh snapshot for the reconnect onopen closure
   // Manual vision override: lets you preview/stream a camera or a loaded video file
   // for testing without first issuing the "what do you see?" voice command.
   const [manualVision, setManualVision] = useState(false);
@@ -195,6 +225,7 @@ export function useRealtimeSocket(config: RuntimeConfig | null) {
   const player = useRef<AudioPlayer | null>(null);
   const recorder = useRef<MicRecorder | null>(null);
   const userClosed = useRef(false);
+  const wasConnected = useRef(false);  // set after the first open — later opens are reconnects
   const frameProvider = useRef<FrameProvider | null>(null);
   const screenProvider = useRef<FrameProvider | null>(null);
   const micOn = useRef(false);
@@ -213,7 +244,13 @@ export function useRealtimeSocket(config: RuntimeConfig | null) {
     socket.binaryType = "arraybuffer";
     ws.current = socket;
 
-    socket.onopen = () => dispatch({ k: "conn", v: "connected" });
+    socket.onopen = () => {
+      dispatch({ k: "conn", v: "connected" });
+      // On a RE-open after a drop, re-assert the on-screen UI so the server's SCREEN STATE matches
+      // what's actually displayed (panels, rotation, the active checklist, schematic, highlight).
+      if (wasConnected.current) send(buildResync(stateRef.current));
+      wasConnected.current = true;
+    };
     socket.onmessage = (e: MessageEvent) => {
       if (e.data instanceof ArrayBuffer) {
         player.current?.enqueue(e.data);

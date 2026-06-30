@@ -734,7 +734,45 @@ async def test_workflow_step_speaks_via_create_response(bridge, monkeypatch):
     bridge._start_workflow("unclamp_fault")
     await bridge._advance_workflow()  # step 0
     assert any("AUTOPILOT WORKFLOW" in t for _r, t in bridge.session.injected)
-    assert bridge.session.responses == 1  # one spoken turn per step (safe-point create_response)
+    assert bridge.session.responses == 1  # the non-gated run collapses into ONE consolidated turn
+
+
+async def test_workflow_condenses_to_two_narration_turns(bridge, monkeypatch):
+    # B3: all non-gated step tools run, but the narration collapses from 5 turns to ≤2 (one
+    # consolidated summary + the gated proposal), on top of the model's own initial ack.
+    ran = []
+
+    async def fake_apply(name, args):
+        ran.append(name)
+
+    monkeypatch.setattr(bridge, "_apply_tool", fake_apply)
+    monkeypatch.setattr(bridge, "_schedule_diagnosis", lambda *a, **k: None)
+    bridge.session.responses = 0
+    bridge._start_workflow("unclamp_fault")
+    await bridge._advance_workflow()   # turn 1: 4 non-gated steps silently + ONE consolidated
+    await bridge._advance_workflow()   # turn 2: the gated step proposes + pauses
+    assert bridge.session.responses <= 2          # ≤2 workflow-narration responses
+    assert {"show_machine_data", "highlight_component"} <= set(ran)  # all non-gated tools ran
+    assert bridge._workflow["paused"] is True     # gate still pauses for confirmation
+
+
+async def test_resync_rebuilds_state_after_reconnect(bridge):
+    bridge._apply_resync({
+        "visible": ["procedure", "model"],
+        "model_rotation": {"x": 90, "y": 0, "z": 0},
+        "procedure": {"id": "tool_change", "index": 2, "completed_count": 2, "complete": False},
+        "safety": None,
+        "schematic": {"diagram": "spindle", "focus": "drawbar"},
+        "highlight": "drawbar",
+    })
+    st = bridge.orch.state
+    assert st.visible_panels == {"procedure", "model"}
+    assert st.model_rotation == {"x": 90, "y": 0, "z": 0}
+    assert st.active_procedure["procedure_id"] == "tool_change"
+    assert st.active_procedure["index"] == 2 and st.active_procedure["completed"] == {0, 1}
+    assert st.active_procedure["complete"] is False and st.active_safety is None
+    assert st.active_schematic == "spindle" and st.schematic_focus == "drawbar"
+    assert st.active_highlight == "drawbar"
 
 
 # ── off-loop background diagnostic agent ─────────────────────────────────────

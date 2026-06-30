@@ -226,6 +226,16 @@ TOOLS: dict[str, dict[str, Any]] = {
         {"panel": {"type": "string", "enum": sorted(wl.PANELS), "description": "Panel to show ('all' shows everything)."}},
         ["panel"],
     ),
+    "set_panels": _fn(
+        "set_panels",
+        "Call to show EXACTLY the named panels and hide everything else — for 'show only the "
+        "schematic', 'hide everything except the work-order log', 'keep the checklist and the "
+        "camera, hide the rest'. The keep-set is honored exactly. Use hide_panel for a single "
+        "hide and hide_panel{all} to clear the whole screen.",
+        {"panels": {"type": "array", "items": {"type": "string", "enum": sorted(wl.PANELS - {"all"})},
+                    "description": "The ONLY panels to keep visible; every other panel is hidden."}},
+        ["panels"],
+    ),
     "hide_panel": _fn(
         "hide_panel",
         "Call to hide ONE named panel (e.g. 'hide the spindle schematic'); only 'all' clears the "

@@ -11,7 +11,7 @@ EXPECTED_TOOLS = {
     "show_machine_data", "show_schematic", "navigate_schematic", "lookup_part",
     "lookup_torque", "record_measurement", "run_safety_check", "start_procedure",
     "procedure_step", "log_event", "capture_photo", "generate_report",
-    "prepare_handoff", "show_panel", "hide_panel", "activate_vision", "deactivate_vision",
+    "prepare_handoff", "show_panel", "set_panels", "hide_panel", "activate_vision", "deactivate_vision",
     "rotate_model", "set_rotation", "reset_view", "highlight_component", "clear_highlight",
     "dismiss_alert", "annotate_field",
 }

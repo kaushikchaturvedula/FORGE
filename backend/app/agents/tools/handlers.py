@@ -468,6 +468,18 @@ def show_panel(state: SessionState, args: dict) -> ToolResult:
     return ToolResult(output={"shown": panel}, control={"action": "show_panel", "panel": panel})
 
 
+def set_panels(state: SessionState, args: dict) -> ToolResult:
+    """Show EXACTLY the named panels and hide everything else — for 'show only X' / 'hide
+    everything except X'. Resolves each name; the keep-set is honored exactly."""
+    resolved: list[str] = []
+    for p in args.get("panels", []) or []:
+        r = resolve_panel(p)
+        if r and r != "all" and r not in resolved:
+            resolved.append(r)
+    state.visible_panels = set(resolved)
+    return ToolResult(output={"shown": resolved}, control={"action": "set_panels", "panels": resolved})
+
+
 def hide_panel(state: SessionState, args: dict) -> ToolResult:
     """A SPECIFIC named target hides ONLY that panel — only 'all'/'everything' clears the
     screen. Hiding is IDEMPOTENT: a panel that's already gone (or named again under a second
@@ -668,6 +680,7 @@ HANDLERS: dict[str, Callable[[SessionState, dict], ToolResult]] = {
     "generate_report": generate_report,
     "prepare_handoff": prepare_handoff,
     "show_panel": show_panel,
+    "set_panels": set_panels,
     "hide_panel": hide_panel,
     "rotate_model": rotate_model,
     "set_rotation": set_rotation,

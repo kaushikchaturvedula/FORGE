@@ -185,6 +185,15 @@ def validate(tool_name: str, args: dict) -> ValidationResult:
             )
         return _OK
 
+    if tool_name == "set_panels":
+        panels = args.get("panels") or []
+        if not isinstance(panels, list) or not panels:
+            return _reject("Which panels should I keep on screen?")
+        bad = [p for p in panels if resolve_panel(p) is None]
+        if bad:
+            return _reject(f"I don't recognize {', '.join(map(repr, bad))} — name the panels to keep.")
+        return _OK
+
     if tool_name in ("rotate_model", "set_rotation"):
         axis = str(args.get("axis", "y")).lower()
         if axis not in ROTATE_AXES:
