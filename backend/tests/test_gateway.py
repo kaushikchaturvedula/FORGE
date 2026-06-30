@@ -140,6 +140,18 @@ async def test_apply_tool_runs_emits_panel_and_chip_and_dedups(bridge):
     assert n_tool_after == n_tool_before  # but not re-executed / re-emitted to the browser
 
 
+async def test_tool_event_reports_real_status(bridge):
+    # HUD truth: a grounding-rejected call shows "rejected", a valid one shows "called".
+    bridge.ws.json_sent.clear()
+    await bridge._apply_tool("show_machine_data", {"data_type": "bogus"})  # not in DATA_TYPES
+    tev = [m for m in bridge.ws.json_sent if m["type"] == "tool"]
+    assert tev and tev[-1]["status"] == "rejected"
+    bridge.ws.json_sent.clear()
+    await bridge._apply_tool("show_machine_data", {"data_type": "telemetry"})  # valid
+    tev2 = [m for m in bridge.ws.json_sent if m["type"] == "tool"]
+    assert tev2 and tev2[-1]["status"] == "called"
+
+
 # ── intent drives the panels from the user's transcript ─────────────────────
 async def test_transcript_intent_shows_telemetry_panel(bridge):
     await bridge._on_user_transcript("what's the tool wear right now")

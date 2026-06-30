@@ -691,7 +691,6 @@ class RealtimeBridge:
         if self.dedup.is_duplicate(key, time.monotonic()):
             logger.info("deduped tool call %s", name)
             return self._outcome_cache.get(key)
-        await self._safe_send_json(protocol.tool_event(name, status="called", args=args))
         # Light up the specialist chip that owns this tool.
         agent = TOOL_AGENT.get(name)
         if agent:
@@ -706,6 +705,10 @@ class RealtimeBridge:
             from app.agents.orchestrator import ToolOutcome
 
             outcome = ToolOutcome(model_output={"error": "tool_failed", "message": f"{name} failed: {exc}"})
+        # HUD: report the REAL outcome (one event per call) — a grounding-rejected or failed call
+        # shows "rejected", not a green "called".
+        status = "rejected" if outcome.model_output.get("error") else "called"
+        await self._safe_send_json(protocol.tool_event(name, status=status, args=args))
         self._outcome_cache[key] = outcome
         self._queue_proactive_alert(name, outcome)  # autopilot: queue a safety alert on a threshold crossing
         self._maybe_schedule_diagnosis(name, outcome)  # autopilot: background diagnosis on a crossing

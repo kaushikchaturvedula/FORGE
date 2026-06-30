@@ -106,11 +106,13 @@ function applyMsg(s: State, m: ServerMessage): State {
       return { ...s, partialAssistant: "", conv: "listening" };
     case "panel": {
       const prev = s.panels[m.panel] || {};
-      // Procedures AND safety share the "procedure" panel and each handler sends a FULL
-      // self-contained view — REPLACE it so stale completed/complete/items/steps never leak
-      // across checklists or across complete→restart. Other panels (schematic's partial
-      // `navigate` updates) keep the shallow merge.
-      const data = m.panel === "procedure" ? m.data : { ...prev, ...m.data };
+      // The "procedure" panel (procedures + safety) and "machine_data" panel (nameplate / specs /
+      // telemetry / faults / part / torque / diagnosis) each send a FULL self-contained view —
+      // REPLACE so stale fields never leak across views. Other panels keep the shallow merge:
+      // event_log relies on it (report/handoff persist across log updates) and schematic uses
+      // partial `navigate` updates.
+      const full = m.panel === "procedure" || m.panel === "machine_data";
+      const data = full ? m.data : { ...prev, ...m.data };
       return { ...s, panels: { ...s.panels, [m.panel]: data }, visible: { ...s.visible, [m.panel]: true } };
     }
     case "alert":
