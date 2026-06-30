@@ -137,23 +137,46 @@ def test_procedure_complete_through_total_finishes(state):
     assert state.last_completed == {"kind": "procedure", "title": state.active_procedure["title"]}
 
 
-def test_procedure_uncomplete_reset_and_no_gap_after_goto(state):
+def test_uncomplete_snaps_highlight_to_new_frontier(state):
+    # FIX #1: complete{through:5, goto_step:6} -> completed {0..4}, cursor on 6; then uncomplete
+    # back to {0,1,2} must snap the highlight to the NEW to-do (step 4, index 3), not leave it at 5.
     run(state, "start_procedure", {"procedure_id": "tool_change"})  # 7 steps
-    run(state, "procedure_step", {"action": "complete", "through": 3})
-    assert state.active_procedure["completed"] == {0, 1, 2}
-    # uncomplete walks the prefix back (stays contiguous)
-    run(state, "procedure_step", {"action": "uncomplete", "through": 1})
-    assert state.active_procedure["completed"] == {0}
-    # goto then next never creates a gap: cursor is ahead of the frontier -> advance, no mark
-    run(state, "procedure_step", {"action": "goto", "step": 5})       # 0-based index 4
-    r = run(state, "procedure_step", {"action": "next"})              # frontier=1, index 4 != 1
-    assert state.active_procedure["completed"] == {0}                 # unchanged — no out-of-order
-    assert state.active_procedure["index"] == 5
-    assert r.output.get("unmarked_steps")                             # agent is told steps are unmarked
-    # reset clears everything
-    run(state, "procedure_step", {"action": "reset"})
+    run(state, "procedure_step", {"action": "complete", "through": 5, "goto_step": 6})
+    p = state.active_procedure
+    assert p["completed"] == {0, 1, 2, 3, 4} and p["index"] == 5
+    run(state, "procedure_step", {"action": "uncomplete", "through": 3})
+    assert p["completed"] == {0, 1, 2}            # contiguous prefix
+    assert p["index"] == 3                        # highlight snapped to the new frontier (step 4)
+    assert len(p["completed"]) == 3               # to-do = frontier = step 4 (1-based)
+
+
+def test_next_always_completes_the_frontier_not_the_cursor(state):
+    # FIX #2: a goto moved the cursor off the frontier; next still completes the TO-DO in order.
+    run(state, "start_procedure", {"procedure_id": "tool_change"})
+    run(state, "procedure_step", {"action": "goto", "step": 2})       # index 1, completed {}
     assert state.active_procedure["completed"] == set()
-    assert state.active_procedure["index"] == 0 and state.active_procedure["complete"] is False
+    r = run(state, "procedure_step", {"action": "next"})              # completes frontier = step 1
+    assert state.active_procedure["completed"] == {0}                 # step 1 done (NOT step 2)
+    assert state.active_procedure["index"] == 1                       # to-do/highlight now step 2
+    assert "unmarked_steps" not in r.output                           # no gap, no off-frontier note
+
+
+def test_next_marks_frontier_regardless_of_cursor_no_gaps(state):
+    run(state, "start_procedure", {"procedure_id": "tool_change"})
+    run(state, "procedure_step", {"action": "complete", "through": 2})  # {0,1}
+    run(state, "procedure_step", {"action": "goto", "step": 6})         # cursor far ahead
+    run(state, "procedure_step", {"action": "next"})                    # completes frontier = step 3
+    p = state.active_procedure
+    assert p["completed"] == {0, 1, 2}                                  # still a contiguous prefix
+    assert p["index"] == 3                                              # highlight follows the to-do
+
+
+def test_procedure_reset_clears_everything(state):
+    run(state, "start_procedure", {"procedure_id": "tool_change"})
+    run(state, "procedure_step", {"action": "complete", "through": 3})
+    run(state, "procedure_step", {"action": "reset"})
+    p = state.active_procedure
+    assert p["completed"] == set() and p["index"] == 0 and p["complete"] is False
     assert state.last_completed is None
 
 

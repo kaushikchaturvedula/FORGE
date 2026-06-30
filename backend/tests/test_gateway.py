@@ -296,6 +296,24 @@ def test_build_ui_state_reports_completed_checklist():
     assert "complete" in out and "step one" not in out.lower()
 
 
+def test_build_ui_state_reports_todo_and_highlight():
+    # SCREEN STATE leads with the to-do (next-to-perform); when viewing a different step it shows both.
+    from app.ws.gateway import build_ui_state
+    from app.agents.session_state import SessionState
+    from app.agents.tools.handlers import start_procedure, procedure_step
+
+    s = SessionState()
+    start_procedure(s, {"procedure_id": "tool_change"})       # 7 steps
+    procedure_step(s, {"action": "complete", "through": 2})   # to-do = step 3, cursor on it too
+    s.visible_panels.add("procedure")
+    out = build_ui_state(s)
+    assert "on step 3 of 7 (next to do)" in out
+    # navigate to view a different step -> report BOTH the to-do and the highlighted step
+    procedure_step(s, {"action": "goto", "step": 6})
+    out2 = build_ui_state(s)
+    assert "next step to do is step 3 of 7" in out2 and "currently viewing step 6" in out2
+
+
 def test_procedure_step_auto_logs_each_step():
     from app.agents.tools.handlers import start_procedure, procedure_step
     from app.agents.session_state import SessionState

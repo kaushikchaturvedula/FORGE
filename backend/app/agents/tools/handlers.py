@@ -318,9 +318,12 @@ def procedure_step(state: SessionState, args: dict) -> ToolResult:
         return _procedure_view(state)
 
     if action == "uncomplete":
-        # Walk the completed PREFIX back to {0..N-1} (default N=0 -> none). Stays contiguous.
+        # Walk the completed PREFIX back to {0..N-1} (default N=0 -> none). Stays contiguous, and
+        # the highlight snaps to the new frontier (= next-to-perform), so the cursor never lingers
+        # ahead of the to-do.
         n = max(0, min(len(steps), int(args.get("through", 0))))
         proc["completed"] = completed = set(range(n))
+        proc["index"] = min(last, n)
         state.add_log("procedure_step", f"Unmarked steps after {n} per operator", step=n)
         return _procedure_view(state)
 
@@ -342,29 +345,23 @@ def procedure_step(state: SessionState, args: dict) -> ToolResult:
         return view
 
     if action == "next":
-        frontier = len(completed)  # completed is ALWAYS {0..frontier-1}
-        if proc["index"] == frontier:
-            # operator asserts the frontier step done -> grow the prefix (a gap is impossible)
-            completed.add(proc["index"])
-            done = steps[proc["index"]]
-            entry = state.add_log("procedure_step",
-                                  f"Step {done.get('n')} done per operator (operator-asserted, not agent-verified): {done.get('text')}",
-                                  step=done.get("n"))
-            if len(completed) >= len(steps):
-                res = _finish()
-                res.log = entry
-                return res
-            proc["index"] = min(last, proc["index"] + 1)
-            view = _procedure_view(state)
-            view.log = entry  # surface the completed step to the live work-order feed
-            return view
-        # Cursor is behind the frontier (already done) or ahead of it (moved via goto) -> advance
-        # the cursor only, NEVER marking out of order. Surface any not-yet-marked steps.
-        proc["index"] = min(last, proc["index"] + 1)
+        # Always complete the TO-DO (next-to-perform = the prefix frontier), regardless of where
+        # the view cursor was left by a goto. completed stays a contiguous prefix {0..k-1}.
+        frontier = len(completed)
+        if frontier >= len(steps):  # everything already done
+            return _finish()
+        completed.add(frontier)
+        done = steps[frontier]
+        entry = state.add_log("procedure_step",
+                              f"Step {done.get('n')} done per operator (operator-asserted, not agent-verified): {done.get('text')}",
+                              step=done.get("n"))
+        if len(completed) >= len(steps):
+            res = _finish()
+            res.log = entry
+            return res
+        proc["index"] = len(completed)  # highlight follows the to-do (the new frontier)
         view = _procedure_view(state)
-        unmarked = [i + 1 for i in range(proc["index"]) if i not in completed]
-        if unmarked:
-            view.output["unmarked_steps"] = unmarked
+        view.log = entry  # surface the completed step to the live work-order feed
         return view
 
     if action in ("previous", "back"):
@@ -377,7 +374,7 @@ def _procedure_view(state: SessionState) -> ToolResult:
     step = proc["steps"][proc["index"]]
     return ToolResult(
         output={"procedure_id": proc["procedure_id"], "step_number": step.get("n"), "total": len(proc["steps"]), "step": step.get("text"), "warning": step.get("warning"), "expect": step.get("expect")},
-        panel={"panel": "procedure", "data": {"mode": "procedure", "id": proc["procedure_id"], "title": proc["title"], "steps": proc["steps"], "index": proc["index"], "completed": sorted(proc.get("completed", set())), "warnings": proc["warnings"]}},
+        panel={"panel": "procedure", "data": {"mode": "procedure", "id": proc["procedure_id"], "title": proc["title"], "steps": proc["steps"], "index": proc["index"], "current": len(proc.get("completed", set())), "completed": sorted(proc.get("completed", set())), "warnings": proc["warnings"]}},
         control={"action": "show_panel", "panel": "procedure"},
     )
 

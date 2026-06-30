@@ -177,11 +177,17 @@ def build_ui_state(state: SessionState) -> str:
                 parts.append(f"the {ap.get('title', '')} procedure is complete (all {len(ap.get('steps', []))} steps done)")
             elif ap:
                 steps = ap.get("steps", [])
-                i = ap.get("index", 0)
-                cur = steps[i].get("text") if 0 <= i < len(steps) else ""
+                total = len(steps)
                 done = sorted(d + 1 for d in ap.get("completed", set()))
                 done_str = f", steps {', '.join(map(str, done))} done" if done else ""
-                parts.append(f"the {ap.get('title', '')} procedure (on step {i + 1} of {len(steps)}{done_str}: '{cur}')")
+                frontier = len(ap.get("completed", set()))  # the to-do (next-to-perform)
+                i = ap.get("index", 0)                       # the highlighted/viewing step
+                ftext = steps[frontier].get("text") if 0 <= frontier < total else ""
+                if i == frontier:
+                    parts.append(f"the {ap.get('title', '')} procedure (on step {frontier + 1} of {total} (next to do){done_str}: '{ftext}')")
+                else:
+                    itext = steps[i].get("text") if 0 <= i < total else ""
+                    parts.append(f"the {ap.get('title', '')} procedure (next step to do is step {frontier + 1} of {total} ('{ftext}'); currently viewing step {i + 1} ('{itext}'){done_str})")
             elif asf and asf.get("complete"):
                 parts.append(f"the {asf.get('title', '')} safety checklist is complete (all {len(asf.get('items', []))} items done)")
             elif asf:
