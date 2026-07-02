@@ -7,9 +7,6 @@
     execute → run the grounded handler over the bundled catalog.
     after   → record tool metrics; surface handler errors as spoken fallbacks
               instead of crashing the session.
-
-Transfers (transfer_to_*, return_to_orchestrator) are handled by the orchestrator,
-not here.
 """
 
 from __future__ import annotations

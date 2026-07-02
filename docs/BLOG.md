@@ -18,10 +18,14 @@ code snippets, screenshots, and the demo GIF.*
 
 ## 3. The architecture decision that saved the demo
 - AgentScope's realtime is single-agent; multi-agent realtime *transfer* is unproven.
-- The move: **one session, nine logical agents.** A "transfer" is a `session.update`
-  swapping instructions + tools + voice. Full multi-agent UX, none of the fragility, and
-  it dodges the "every agent needs a realtime model" trap.
-- Show the `Orchestrator.process_tool_call` fork: transfer vs. grounded data tool.
+- The move: **one flat session, all tools, per-tool specialist routing.** The session is
+  configured once at open with the full grounded catalog; every tool call lights its
+  owning specialist's chip (the `TOOL_AGENT` map). We built and unit-tested a
+  `session.update` swap-based transfer layer, then deliberately shipped without it — no
+  swap latency, no dropped tool calls mid-swap — and still dodged the "every agent needs
+  a realtime model" trap.
+- Show the pipeline instead: the grounding gate (`grounding/whitelists.py`), the
+  `TOOL_AGENT` chip routing in the gateway, and the 4 s dedup cache.
 
 ## 4. Making an LLM trustworthy enough to torque a bolt
 - Grounding as structure, not vibes: every fact comes from a tool; every argument is

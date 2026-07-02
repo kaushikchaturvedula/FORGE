@@ -56,9 +56,9 @@ Browser (React Field Console)
 FastAPI Gateway  ──  dual async tasks (upstream / downstream)
   │  dedup cache · FIRST_EXCEPTION teardown · session resumption · vision gating
   ▼
-Orchestration  ──  ONE Qwen-Omni-Realtime session
-  │  9 logical agents (orchestrator + 8 specialists + Field_Advisor)
-  │  "transfer" = session.update swap of instructions + tool subset + voice
+Orchestration  ──  ONE Qwen-Omni-Realtime session (full 25-tool catalog at session open)
+  │  10 specialist roles (orchestrator + 8 specialists + Field_Advisor)
+  │  per-tool routing: every executed tool lights its owning specialist's HUD chip (TOOL_AGENT)
   ▼
 Grounding layer  ──  argument whitelists · tool-only facts · LOTO verbal gating
   │
@@ -71,9 +71,11 @@ See [docs/architecture.md](docs/architecture.md) for the full diagram.
 
 > **Why one session, not nine?** AgentScope's realtime support is single-agent; a
 > true multi-agent realtime *transfer* is unproven and its DashScope wrapper may not
-> forward tool-calls. FORGE runs **one** realtime session and implements the 9-agent
-> hierarchy as server-side instruction/tool swaps via `session.update` — robust, with
-> the full multi-agent UX (routing log, agent chips) and a stronger engineering story.
+> forward tool-calls. So FORGE ships **one** flat realtime session carrying all tools,
+> with per-tool specialist routing (the routing log and agent chips). A swap-based
+> "transfer" layer (`session.update` per handoff) was built and unit-tested during
+> development, but is not enabled at runtime — no swap latency, no risk of dropped
+> tool calls mid-swap, simpler session resumption.
 
 ---
 

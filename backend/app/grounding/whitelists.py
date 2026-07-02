@@ -212,7 +212,7 @@ def validate(tool_name: str, args: dict) -> ValidationResult:
 
     # Tools with free-form or no constrained args: log_event, capture_photo,
     # generate_report, prepare_handoff, reset_view, clear_highlight, annotate_field,
-    # activate_vision, deactivate_vision, transfers.
+    # activate_vision, deactivate_vision.
     return _OK
 
 

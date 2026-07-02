@@ -394,7 +394,8 @@ class RealtimeBridge:
             # The client is the token gate: it only streams frames while vision is on
             # (manual 👁 toggle or the agent-driven activate_vision). So forward whatever
             # arrives — gating here on server vision_active was silently dropping the
-            # manual-vision frames. vision_active is used only to add the prompt banner.
+            # manual-vision frames. vision_active just records the client's vision state
+            # (for the log line below); frame gating is client-side.
             if payload.get("jpeg_b64"):
                 try:
                     jpeg = base64.b64decode(payload["jpeg_b64"])

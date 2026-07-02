@@ -47,7 +47,7 @@
   <!-- Orchestrator -->
   <rect class="box" x="346" y="286" width="268" height="84" rx="6"/>
   <text class="h" x="356" y="306">Orchestrator — single-session router</text>
-  <text class="s" x="356" y="324">transfer = session.update (instructions + tools)</text>
+  <text class="s" x="356" y="324">per-tool specialist routing (TOOL_AGENT chips)</text>
   <text class="s" x="356" y="340">9 agents: orchestrator · briefing · safety ·</text>
   <text class="s" x="356" y="356">schematic · diagnostic · parts · procedure ·</text>
   <text class="s" x="356" y="372">documentation · handoff · field_advisor 👁</text>

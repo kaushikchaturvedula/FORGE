@@ -1,26 +1,21 @@
-"""The 9 FORGE agents as one-session logical roles.
+"""The FORGE specialist registry — per-tool attribution roles on one flat session.
 
-There is a single Qwen-Omni-Realtime session. Each "agent" is a bundle of
-(instructions, tool subset, voice, allowed transfers). A transfer is a server-issued
-``session.update`` that swaps the active bundle while the conversation continues — this
-is how the multi-agent hierarchy works without a second realtime session and without
-the "every agent needs a realtime model" failure mode.
+There is a single Qwen-Omni-Realtime session, configured once at session open with the
+full grounded tool catalog (see the gateway's ``_ensure_session``). Each "agent" here is
+a REGISTRY entry: a display name and role metadata. The live use is per-tool attribution —
+the gateway's ``TOOL_AGENT`` map assigns every executed tool to its owning specialist and
+lights that chip in the HUD (plus the hello banner).
 
-Transfer tools (``transfer_to_<name>`` / ``return_to_orchestrator``) are generated here
-from each agent's ``transfers`` list and recognized by the orchestrator (not the data
-handlers).
+A session.update-based "transfer" layer (swapping instruction/tool bundles between these
+roles mid-conversation) was designed, implemented, and unit-tested during development, but
+the shipped runtime deliberately runs the single flat session — no swap latency, no risk
+of dropped tool calls mid-swap, simpler session resumption.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from functools import lru_cache
-from pathlib import Path
 from typing import Any
-
-from app.agents.tools import schemas
-
-PROMPTS_DIR = Path(__file__).resolve().parent / "prompts"
 
 
 @dataclass(frozen=True)
@@ -33,20 +28,6 @@ class AgentDefinition:
     transfer_hint: str
     is_vision: bool = False
     extra: dict[str, Any] = field(default_factory=dict)
-
-    def instructions(self) -> str:
-        return _shared_preamble() + "\n\n" + _load_prompt(self.name)
-
-
-@lru_cache(maxsize=None)
-def _load_prompt(name: str) -> str:
-    path = PROMPTS_DIR / f"{name}.md"
-    return path.read_text(encoding="utf-8").strip()
-
-
-@lru_cache(maxsize=1)
-def _shared_preamble() -> str:
-    return _load_prompt("_shared")
 
 
 # ── The registry ─────────────────────────────────────────────────────────────
@@ -137,48 +118,3 @@ AGENTS: dict[str, AgentDefinition] = {
 }
 
 ORCHESTRATOR = "orchestrator"
-
-
-# ── transfer tool naming ─────────────────────────────────────────────────────
-def transfer_tool_name(target: str) -> str:
-    return "return_to_orchestrator" if target == ORCHESTRATOR else f"transfer_to_{target}"
-
-
-def is_transfer_tool(name: str) -> bool:
-    return name == "return_to_orchestrator" or name.startswith("transfer_to_")
-
-
-def transfer_target(name: str) -> str | None:
-    if name == "return_to_orchestrator":
-        return ORCHESTRATOR
-    if name.startswith("transfer_to_"):
-        target = name[len("transfer_to_") :]
-        return target if target in AGENTS else None
-    return None
-
-
-def _transfer_schema(target: str) -> dict[str, Any]:
-    agent = AGENTS[target]
-    return {
-        "type": "function",
-        "function": {
-            "name": transfer_tool_name(target),
-            "description": f"Hand control to the {agent.display} — {agent.transfer_hint}. The conversation continues seamlessly.",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "reason": {"type": "string", "description": "Optional short reason for the handoff."}
-                },
-                "required": [],
-                "additionalProperties": False,
-            },
-        },
-    }
-
-
-def session_config(agent_name: str) -> tuple[str, list[dict[str, Any]]]:
-    """Return (instructions, tools) for an agent — the payload of a session.update."""
-    agent = AGENTS[agent_name]
-    tools = schemas.get_schemas(agent.tool_names)
-    tools += [_transfer_schema(t) for t in agent.transfers]
-    return agent.instructions(), tools

@@ -2,7 +2,7 @@
 
 FORGE's production realtime bridge talks the DashScope realtime WebSocket protocol
 directly ([`session.py`](session.py)) because it needs fine-grained control over the
-tool/image events and the per-transfer ``session.update`` swaps. Two idiomatic Qwen
+tool/image events and the session.update sent at session open. Two idiomatic Qwen
 connectors are *also* supported when installed, and reported here for transparency:
 
   * the **DashScope Python SDK** (`dashscope.audio.qwen_omni.OmniRealtimeConversation`),

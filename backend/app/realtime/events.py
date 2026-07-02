@@ -234,8 +234,8 @@ def session_update(
     tools_format: str = "flat",
     tool_choice: str = "",
 ) -> dict[str, Any]:
-    """Build a session.update. Swapping instructions+tools here is how FORGE
-    'transfers' between its logical agents on one session.
+    """Build a session.update — sent once at session open to configure the flat
+    session (full instructions + the whole grounded tool catalog).
 
     Field values match the live DashScope realtime spec: audio format is "pcm"
     (input 16 kHz, output 24 kHz, mono 16-bit), and turn_detection is a server-VAD

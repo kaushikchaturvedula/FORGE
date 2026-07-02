@@ -27,7 +27,7 @@ flowchart LR
     UP["upstream_task: PCM ~100ms + frames → session"]
     DOWN["downstream_task: audio · transcripts · tool calls → browser"]
     ROBUST["4 s tool dedup · FIRST_EXCEPTION teardown · session resumption"]
-    ORCH["Orchestrator — single-session router\n(transfer = session.update of instructions + tools)"]
+    ORCH["Orchestrator — grounded tool executor\n(per-tool specialist routing via TOOL_AGENT chips)"]
     GROUND["Grounding: whitelists · before/after callbacks · tool-only facts"]
     DATA["CNC Catalogs: AI4I telemetry · parts · procedures · safety · SVG schematics"]
   end
@@ -56,7 +56,7 @@ flowchart LR
   UP --- ROBUST --- DOWN
   ORCH --- GROUND --- DATA
   DOWN -- "tool call" --> ORCH
-  ORCH -- "session.update (transfer)" --> RT
+  ORCH -- "tool call → grounded execution" --> RT
   ORCH --- Agents
   OSS -. "assets at startup" .-> DATA
   ACR -. image .-> ECShost
@@ -64,14 +64,17 @@ flowchart LR
 
 ## Why these decisions
 
-**One realtime session, nine logical agents.** AgentScope's realtime support is
-single-agent; a true multi-agent realtime *transfer* is unproven and its DashScope
-wrapper may not forward tool-calls. So FORGE keeps **one** Qwen realtime session and
-implements the hierarchy server-side: each "agent" is a bundle of
-`(instructions, tool-subset, voice)`, and a *transfer* is a `session.update` that swaps
-that bundle while the conversation continues. This gives the full multi-agent UX
-(routing log, agent chips, scoped tools) with none of the multi-session fragility and
-sidesteps the "every agent needs a realtime model" failure mode entirely.
+**One flat realtime session, specialist attribution per tool.** AgentScope's realtime
+support is single-agent; a true multi-agent realtime *transfer* is unproven and its
+DashScope wrapper may not forward tool-calls. So FORGE keeps **one** Qwen realtime
+session, configured once at session open with the full grounded tool catalog. The
+specialist layer is per-tool routing: every executed tool is attributed to its owning
+specialist (the gateway's `TOOL_AGENT` map) and surfaced as routing chips + a routing
+log in the HUD. A swap-based transfer layer (`session.update` exchanging instruction/
+tool bundles per handoff) was designed, implemented, and unit-tested during development,
+but the shipped runtime deliberately runs the flat session — no swap latency, no risk of
+dropped tool calls mid-swap, simpler session resumption — and still sidesteps the "every
+agent needs a realtime model" failure mode entirely.
 See [`backend/app/agents/orchestrator.py`](../backend/app/agents/orchestrator.py) and
 [`specialists.py`](../backend/app/agents/specialists.py).
 
@@ -104,7 +107,7 @@ Compute precisely because of the 120-minute WebSocket requirement.
 1. Browser streams 16 kHz PCM; Qwen server-VAD detects end-of-turn and transcribes.
 2. The model decides to call a tool → `response.function_call_arguments.done`.
 3. Gateway de-dups, the grounding layer validates args, the handler reads the catalog.
-4. If it's a transfer, the gateway sends a `session.update` swapping the active agent.
+4. The gateway attributes the tool to its owning specialist (`TOOL_AGENT`) and lights that routing chip in the HUD.
 5. The grounded result is returned to the model (`function_call_output` + `response.create`).
 6. The model speaks the result as 24 kHz audio; the matching panel updates on the console.
 7. Every step is timestamped into the work-order log for the report and handoff.

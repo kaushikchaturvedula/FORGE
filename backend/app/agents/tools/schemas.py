@@ -3,8 +3,8 @@
 These are the only ways the model can surface a fact or change the console. Strict
 schemas + the grounding whitelists make a hallucinated part number, torque value, or
 safety step impossible: the model must call the tool, and the tool reads the bundled
-catalog. Transfer tools (transfer_to_*, return_to_orchestrator) are generated in the
-agents layer from the agent registry.
+catalog. The full ``TOOLS`` catalog is advertised to the realtime session once at
+session open.
 """
 
 from __future__ import annotations

@@ -1,8 +1,8 @@
 """Qwen-Omni-Realtime session wrapper (the single real model connection).
 
 One ``QwenRealtimeSession`` owns one WebSocket to DashScope's realtime endpoint and
-carries audio in/out, image frames, function calling, and the ``session.update`` swaps
-that implement FORGE's logical-agent transfers. It is built on the raw ``websockets``
+carries audio in/out, image frames, function calling, and the single ``session.update``
+sent at session open (full instructions + the whole grounded tool catalog). It is built on the raw ``websockets``
 client for full control over the tool/image events (the DashScope SDK and AgentScope's
 ``DashScopeRealtimeModel`` are viable connectors too, but may not forward every event
 FORGE needs — see docs/architecture.md).

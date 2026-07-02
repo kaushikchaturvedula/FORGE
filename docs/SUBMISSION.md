@@ -33,9 +33,12 @@ value, or safety step impossible.
 ## How it maps to the judging criteria
 
 ### Technical Depth & Engineering — 30%
-- **One realtime session, nine logical agents.** "Agent transfer" is a server-issued
-  `session.update` swapping instructions + tool subset + voice while the conversation
-  continues — full multi-agent UX without multi-session fragility.
+- **One flat realtime session, per-tool specialist routing.** The session is configured
+  once at open — a single `session.update` delivering the full 25-tool grounded catalog —
+  and every executed tool is attributed to its owning specialist (the `TOOL_AGENT` map)
+  as routing chips + a routing log in the HUD. A swap-based "transfer" layer was built
+  and unit-tested during development but is deliberately not enabled at runtime (no swap
+  latency, no dropped tool calls mid-swap, simpler resumption).
   [`orchestrator.py`](../backend/app/agents/orchestrator.py), [`specialists.py`](../backend/app/agents/specialists.py)
 - **Robust transport** ([`ws/gateway.py`](../backend/app/ws/gateway.py)): dual async
   tasks joined with `FIRST_EXCEPTION`, 4 s tool-call dedup, session resumption near the
@@ -44,7 +47,7 @@ value, or safety step impossible.
 - **Real bidirectional protocol** isolated in [`realtime/events.py`](../backend/app/realtime/events.py)
   / [`session.py`](../backend/app/realtime/session.py): tools in `session.update`,
   `response.function_call_arguments.done`, `input_image_buffer.append`, `function_call_output`.
-- **87 hermetic tests** (no API key) + a zero-error TypeScript build; CI runs both.
+- **179 hermetic tests** (no API key) + a zero-error TypeScript build; CI runs both.
 
 ### Innovation & AI Creativity — 30%
 - **Multimodal field service is a genuinely new application** of a realtime omni model:
