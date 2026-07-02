@@ -103,6 +103,8 @@ def bridge():
     b._response_active = False
     b._pending_response = False
     b._turn_nonce = 0
+    b._md_sections = {}
+    b._md_turn = -1
     b._announced_alerts = set()
     b._pending_proactive = None
     b._bg_tasks = set()
@@ -138,6 +140,51 @@ async def test_apply_tool_runs_emits_panel_and_chip_and_dedups(bridge):
     assert b is a  # deduped -> cached outcome (so the native closed loop still gets the result)
     n_tool_after = sum(1 for m in bridge.ws.json_sent if m["type"] == "tool")
     assert n_tool_after == n_tool_before  # but not re-executed / re-emitted to the browser
+
+
+# ── turn-scoped stacked machine-data views ──────────────────────────────────
+def _md_panels(bridge):
+    return [m for m in bridge.ws.json_sent if m["type"] == "panel" and m["panel"] == "machine_data"]
+
+
+async def test_machine_data_views_stack_within_one_turn(bridge):
+    # ONE spoken turn asking for several views: successive show_machine_data calls must
+    # ACCUMULATE — the last emitted panel payload carries BOTH sections in call order.
+    bridge._turn_nonce = 1
+    await bridge._apply_tool("show_machine_data", {"data_type": "specs"})
+    await bridge._apply_tool("show_machine_data", {"data_type": "faults"})
+    last = _md_panels(bridge)[-1]["data"]
+    views = [s["view"] for s in last.get("sections", [])]
+    assert views == ["specs", "faults"]
+
+
+async def test_machine_data_single_view_payload_unchanged(bridge):
+    # One view in a turn -> payload byte-compatible with today (no sections key at all).
+    bridge._turn_nonce = 1
+    await bridge._apply_tool("show_machine_data", {"data_type": "specs"})
+    data = _md_panels(bridge)[-1]["data"]
+    assert "sections" not in data and data["view"] == "specs"
+
+
+async def test_machine_data_new_turn_resets_to_single_view(bridge):
+    # The first call of a NEW user turn (nonce advanced, as SpeechStarted does) resets the stack.
+    bridge._turn_nonce = 1
+    await bridge._apply_tool("show_machine_data", {"data_type": "specs"})
+    await bridge._apply_tool("show_machine_data", {"data_type": "faults"})
+    bridge._turn_nonce += 1  # new utterance — same increment the SpeechStarted handler performs
+    await bridge._apply_tool("show_machine_data", {"data_type": "telemetry"})
+    data = _md_panels(bridge)[-1]["data"]
+    assert "sections" not in data and data["view"] == "telemetry"
+
+
+async def test_machine_data_hide_clears_accumulator(bridge):
+    # Hiding the panel mid-turn clears the stack: the next view starts single, no stale sections.
+    bridge._turn_nonce = 1
+    await bridge._apply_tool("show_machine_data", {"data_type": "specs"})
+    await bridge._apply_tool("hide_panel", {"panel": "machine data"})
+    await bridge._apply_tool("show_machine_data", {"data_type": "faults"})
+    data = _md_panels(bridge)[-1]["data"]
+    assert "sections" not in data and data["view"] == "faults"
 
 
 async def test_tool_event_reports_real_status(bridge):

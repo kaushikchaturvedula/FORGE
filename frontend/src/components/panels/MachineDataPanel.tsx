@@ -1,9 +1,33 @@
 import { Empty } from "../Panel";
 
+const SECTION_LABEL: Record<string, string> = {
+  nameplate: "Nameplate", specs: "Specs", telemetry: "Telemetry",
+  maintenance: "Maintenance history", history: "Maintenance history", faults: "Open faults",
+};
+
 export function MachineDataPanel({ data }: { data: any }) {
   if (!data?.view) return <Empty>Ask for the nameplate, specs, telemetry, history, or a part / torque spec.</Empty>;
-  const view = data.view as string;
+  // Turn-scoped stacking: when one spoken turn asked for several views, the payload carries
+  // `sections` (in call order) — render them stacked. Single view renders exactly as before.
+  const sections: any[] = Array.isArray(data.sections) ? data.sections : [];
+  if (sections.length > 1) {
+    return (
+      <div className="flex flex-col gap-4">
+        {sections.map((s, i) => (
+          <div key={`${s.view}-${i}`} className={i > 0 ? "border-t border-forge-edge/50 pt-3" : ""}>
+            <div className="mb-2 text-[10px] font-semibold uppercase tracking-widest text-forge-muted">
+              {SECTION_LABEL[s.view] || String(s.view).replace(/_/g, " ")}
+            </div>
+            {renderView(String(s.view), s)}
+          </div>
+        ))}
+      </div>
+    );
+  }
+  return renderView(data.view as string, data);
+}
 
+function renderView(view: string, data: any) {
   if (view === "part") return <Card title={data.part?.name} rows={kv({ "Part #": data.part?.part_number, Spec: data.part?.spec, Assembly: data.part?.assembly })} highlight="part_number" value={data.part?.part_number} />;
   if (view === "torque")
     return (
@@ -99,7 +123,7 @@ export function MachineDataPanel({ data }: { data: any }) {
   }
 
   // nameplate / specs: render the object as nested key/values.
-  const omit = new Set(["view", "asset_id"]);
+  const omit = new Set(["view", "asset_id", "sections"]);
   const entries = Object.entries(data).filter(([k]) => !omit.has(k));
   return <Card title={view.toUpperCase()} rows={entries.map(([k, v]) => ({ k, v: typeof v === "object" ? JSON.stringify(v) : String(v) }))} />;
 }

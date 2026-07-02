@@ -281,6 +281,10 @@ class RealtimeBridge:
         self._forge_text_at_barge = ""  # FORGE's text when that user turn started
         self._turn_nonce = 0  # increments per user utterance (scopes relative-tool dedup to a turn)
         self._last_user_text = ""  # most recent user utterance (guards unrequested procedure starts)
+        # Turn-scoped machine-data stacking: successive show_machine_data views within ONE user
+        # turn accumulate (rendered as stacked sections); a new turn resets to a single view.
+        self._md_sections: dict[str, dict] = {}  # view -> panel data, in call order
+        self._md_turn = -1  # the _turn_nonce the accumulator belongs to
 
     # ── lifecycle ────────────────────────────────────────────────────────────
     async def run(self) -> None:
@@ -725,8 +729,9 @@ class RealtimeBridge:
             logger.info("hide_panel not_shown: %r -> %r; visible=%s",
                         args.get("panel"), outcome.model_output.get("not_shown"),
                         sorted(self.orch.state.visible_panels))
+        self._reset_md_sections_if_hidden(name, args)  # stale sections never resurface
         for msg in outcome.frontend:
-            await self._safe_send_json(msg)
+            await self._safe_send_json(self._stack_machine_data(name, msg))
         latency_ms = (time.monotonic() - t0) * 1000
         await self._safe_send_json(
             protocol.metrics(self.orch.metrics.count, self.orch.metrics.last_tool, self.orch.metrics.rejected, latency_ms)
@@ -735,6 +740,40 @@ class RealtimeBridge:
             await self._set_asset_label(self.orch.state.asset_id)
         await self._inject_ui_state()  # keep the model aware of what's now on screen
         return outcome
+
+    def _stack_machine_data(self, tool: str, msg: dict) -> dict:
+        """Turn-scoped stacking for the machine-data panel: within ONE user turn, successive
+        show_machine_data views accumulate and the outgoing panel payload additionally carries
+        `sections` = [{view, ...data}, ...] in call order (top-level view/data keys unchanged —
+        additive only). The first call of a NEW turn resets to that single view. Returns a
+        rewritten COPY when stacking applies; the cached outcome is never mutated."""
+        if tool != "show_machine_data" or msg.get("type") != "panel" or msg.get("panel") != "machine_data":
+            return msg
+        data = msg.get("data") or {}
+        view = data.get("view")
+        if not view:
+            return msg
+        if self._md_turn != self._turn_nonce:  # new user utterance — back to a single view
+            self._md_turn = self._turn_nonce
+            self._md_sections = {}
+        self._md_sections.pop(view, None)  # re-asking a view refreshes it and moves it last
+        self._md_sections[view] = data
+        if len(self._md_sections) <= 1:
+            return msg  # single view — payload identical to today
+        return {**msg, "data": {**data, "sections": list(self._md_sections.values())}}
+
+    def _reset_md_sections_if_hidden(self, tool: str, args: dict) -> None:
+        """Clear the machine-data accumulator whenever the panel leaves the screen (hide_panel
+        machine_data/all — incl. the machine-switch intent — or a set_panels keep-set without
+        machine_data), so stale sections never resurface on the next view."""
+        if tool == "hide_panel":
+            p = resolve_panel(args.get("panel", "")) or str(args.get("panel", "")).lower()
+            if p in ("machine_data", "all"):
+                self._md_sections = {}
+        elif tool == "set_panels":
+            resolved = {resolve_panel(x) for x in (args.get("panels") or [])}
+            if "machine_data" not in resolved:
+                self._md_sections = {}
 
     async def _set_asset_label(self, label: str) -> None:
         if label == self._asset_label:
