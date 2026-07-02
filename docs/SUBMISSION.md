@@ -47,7 +47,7 @@ value, or safety step impossible.
 - **Real bidirectional protocol** isolated in [`realtime/events.py`](../backend/app/realtime/events.py)
   / [`session.py`](../backend/app/realtime/session.py): tools in `session.update`,
   `response.function_call_arguments.done`, `input_image_buffer.append`, `function_call_output`.
-- **179 hermetic tests** (no API key) + a zero-error TypeScript build; CI runs both.
+- **178 hermetic tests** (no API key) + a zero-error TypeScript build; CI runs both.
 
 ### Innovation & AI Creativity — 30%
 - **Multimodal field service is a genuinely new application** of a realtime omni model:
@@ -82,8 +82,8 @@ value, or safety step impossible.
   (vision + telemetry), plans (routing across specialists), acts (console + procedures),
   and includes **human-in-the-loop checkpoints** (LOTO verbal confirmation, destructive-
   action confirmation).
-- **Track 3 (Agent Society):** a coordinated hierarchy of nine specialized agents with
-  clean routing, scoped tools, and a shared session state / work order.
+- **Track 3 (Agent Society):** a registry of ten specialist roles with clean per-tool
+  routing (the `TOOL_AGENT` map) and a shared session state / work order.
 
 ## Requirement checklist
 

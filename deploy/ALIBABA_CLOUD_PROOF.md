@@ -22,7 +22,7 @@ realtime model is served from — proving both Alibaba Cloud services are in use
   "oss": { "configured": true, "bucket": "forge-assets", "region": "oss-ap-southeast-1", "reachable": true },
   "dashscope": { "configured": true, "region": "ap-southeast-1 (Singapore)",
                  "endpoint": "wss://dashscope-intl.aliyuncs.com/api-ws/v1/realtime",
-                 "model": "qwen3-omni-flash-realtime" }
+                 "model": "qwen3.5-omni-plus-realtime" }
 }
 ```
 

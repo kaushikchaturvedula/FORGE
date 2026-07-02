@@ -108,8 +108,8 @@ AGENTS: dict[str, AgentDefinition] = {
         name="field_advisor",
         display="Field Advisor",
         voice="Ethan",
-        # Holds diagnostic tools directly so it never has to transfer mid-vision
-        # (which would deactivate the video stream).
+        # This role owns diagnostic tools alongside vision — vision work never
+        # leaves this role, so the video stream stays uninterrupted.
         tool_names=["show_machine_data", "record_measurement", "lookup_part", "navigate_schematic", "log_event", "capture_photo", "deactivate_vision"],
         transfers=["orchestrator"],
         transfer_hint="live vision — reads the machine, spindle state, gauges, nameplates, error codes",

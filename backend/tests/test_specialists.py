@@ -5,7 +5,7 @@ from __future__ import annotations
 from app.agents import specialists as sp
 
 
-def test_nine_agents_registered():
+def test_specialist_registry_contents():
     expected = {
         "orchestrator", "briefing", "safety", "schematic", "diagnostic",
         "parts", "procedure", "documentation", "handoff", "field_advisor",

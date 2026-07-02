@@ -322,10 +322,5 @@ TOOLS: dict[str, dict[str, Any]] = {
 }
 
 
-def get_schemas(names: list[str]) -> list[dict[str, Any]]:
-    """Return the schemas for the named tools, in order, skipping unknown names."""
-    return [TOOLS[n] for n in names if n in TOOLS]
-
-
 # Tool names that, after running, ask the model to continue speaking (most do).
 ALL_TOOL_NAMES = list(TOOLS)

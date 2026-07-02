@@ -59,8 +59,3 @@ def test_enums_match_whitelists():
     assert set(schemas.TOOLS["record_measurement"]["function"]["parameters"]["properties"]["type"]["enum"]) == wl.MEASUREMENT_TYPES
     assert set(schemas.TOOLS["navigate_schematic"]["function"]["parameters"]["properties"]["action"]["enum"]) == wl.NAV_ACTIONS
     assert set(schemas.TOOLS["show_panel"]["function"]["parameters"]["properties"]["panel"]["enum"]) == wl.PANELS
-
-
-def test_get_schemas_filters_and_orders():
-    got = schemas.get_schemas(["lookup_part", "nope", "lookup_torque"])
-    assert [t["function"]["name"] for t in got] == ["lookup_part", "lookup_torque"]

@@ -2,8 +2,8 @@
 
 ![FORGE architecture](architecture.svg)
 
-> The exported diagram above (`architecture.svg`) and the Mermaid source below are the
-> same system. Render the Mermaid live on GitHub.
+> The diagram above (`architecture.svg`) is generated from the Mermaid source below
+> (`@mermaid-js/mermaid-cli`); GitHub also renders the Mermaid natively.
 
 ## The one-line idea
 
@@ -15,52 +15,70 @@ streaming at once), grounded so it can never recite a spec it didn't fetch.
 ## System diagram (Mermaid)
 
 ```mermaid
-flowchart LR
-  subgraph Browser["Browser — Field Console (React/Vite/Tailwind)"]
-    MIC["🎙 Mic → 16 kHz PCM (AudioWorklet)"]
-    CAM["📷 Camera/Screen → JPEG 1 fps (vision-gated)"]
-    PLAY["🔊 24 kHz player + barge-in drain"]
-    UI["Panels + HUD: routing · transcript · tool metrics · session time"]
+flowchart TB
+  classDef human fill:#f5f0e8,stroke:#8a7a5c,color:#3d3529
+  classDef front fill:#eef2fa,stroke:#5b7bb4,color:#22304a
+  classDef back fill:#f2eefa,stroke:#7c5bb4,color:#2f2250
+  classDef store fill:#eefaf0,stroke:#4f9c63,color:#1f3d27
+  classDef cloud fill:#fdf0e7,stroke:#c97b3d,color:#4a2d12
+
+  TECH["👷 Technician — hands busy, gloved<br/>speaks + head-cam / field camera"]:::human
+
+  subgraph CONSOLE["React Field Console (Vite + TypeScript + Three.js)"]
+    HUD["HUD — specialist chips · live transcript<br/>tool-call metrics · 8 voice-driven panels"]:::front
+    AUDIO["Audio worklets<br/>16 kHz PCM up · 24 kHz down + barge-in drain"]:::front
+    VGATE["Client-side vision gate<br/>JPEG frames at 1 fps, only while vision is on"]:::front
   end
 
-  subgraph Gateway["FastAPI Gateway on Alibaba Cloud ECS"]
-    UP["upstream_task: PCM ~100ms + frames → session"]
-    DOWN["downstream_task: audio · transcripts · tool calls → browser"]
-    ROBUST["4 s tool dedup · FIRST_EXCEPTION teardown · session resumption"]
-    ORCH["Orchestrator — grounded tool executor\n(per-tool specialist routing via TOOL_AGENT chips)"]
-    GROUND["Grounding: whitelists · before/after callbacks · tool-only facts"]
-    DATA["CNC Catalogs: AI4I telemetry · parts · procedures · safety · SVG schematics"]
+  subgraph BACKEND["FastAPI backend — Alibaba Cloud ECS (Docker image from ACR)"]
+    GW["WS gateway — dual async pumps<br/>4 s tool-call dedup · session resumption"]:::back
+    INTENT["Deterministic intent layer<br/>transcript → tools, no added LLM latency"]:::back
+    ORCH["Orchestrator + TOOL_AGENT map<br/>per-tool routing to 10 specialist roles → HUD chips"]:::back
+    GROUND["Grounding gate — argument whitelists<br/>tool-only facts → spoken 'not on file' rejection"]:::back
+    AUTO["Autopilot — server-sequenced diagnosis workflow<br/>LOTO checklist state machine, human-confirm gates<br/>proactive AI4I threshold alerts"]:::back
   end
 
-  subgraph Agents["9 logical agents (one realtime session)"]
-    A1["orchestrator"]; A2["briefing"]; A3["safety (LOTO verbal-confirm)"]
-    A4["schematic"]; A5["diagnostic"]; A6["parts"]; A7["procedure"]
-    A8["documentation"]; A9["handoff"]; A10["field_advisor 👁 (vision)"]
+  subgraph DATALAYER["Grounded data layer (bundled, hermetic)"]
+    CAT["Machine · parts · procedures · safety<br/>JSON catalogs + labeled SVG schematics"]:::store
+    AI4I["AI4I 2020 telemetry CSV (UCI, CC BY 4.0)<br/>live readings + failure thresholds"]:::store
   end
 
-  subgraph Qwen["Qwen Cloud — Model Studio / DashScope"]
-    RT["qwen-omni-realtime (WebSocket)\naudio I/O · function calling · image in\nserver VAD + semantic interruption"]
+  subgraph QWEN["Qwen Cloud — DashScope"]
+    RT["qwen-omni-realtime — ONE bidirectional session<br/>audio + vision frames + 25 function tools<br/>configured once at session open · server VAD"]:::cloud
+    QP["qwen-plus — async background diagnosis agent<br/>off the realtime loop"]:::cloud
   end
 
-  subgraph Ali["Alibaba Cloud"]
-    OSS["OSS — CNC video + schematics (oss2)\n/cloud/health proves live region"]
-    ACR["ACR — image"]; ECShost["ECS — long-lived WS host (nginx 7800s)"]
-  end
+  OSS["Alibaba Cloud OSS<br/>assets via oss2 · /cloud/health deployment proof"]:::cloud
 
-  MIC -- "binary PCM" --> UP
-  CAM -- "JPEG frames" --> UP
-  UP <--> RT
-  DOWN <--> RT
-  RT -- "audio + transcript" --> PLAY
-  DOWN --> UI
-  UP --- ROBUST --- DOWN
-  ORCH --- GROUND --- DATA
-  DOWN -- "tool call" --> ORCH
-  ORCH -- "tool call → grounded execution" --> RT
-  ORCH --- Agents
-  OSS -. "assets at startup" .-> DATA
-  ACR -. image .-> ECShost
+  TECH -->|"voice + camera"| CONSOLE
+  CONSOLE <-->|"WebSocket /ws — PCM audio · JPEG frames · panel/control JSON"| GW
+  GW -->|"final transcript"| INTENT
+  INTENT -->|"inferred tool calls"| ORCH
+  GW -->|"native function calls"| ORCH
+  GW ---|"advances at safe points"| AUTO
+  ORCH --> GROUND
+  GROUND -->|"validated handlers read"| CAT
+  GROUND -->|"record + check thresholds"| AI4I
+  GW <-->|"WSS realtime — audio · frames · tool calls"| RT
+  AUTO -.->|"HTTPS chat-completions"| QP
+  OSS -.->|"assets at startup (oss2)"| CAT
 ```
+
+### Where each box lives
+
+| Box | Code |
+|---|---|
+| Field Console (HUD, panels, audio, vision gate) | [`frontend/src/App.tsx`](../frontend/src/App.tsx), [`hooks/useRealtimeSocket.ts`](../frontend/src/hooks/useRealtimeSocket.ts), [`audio/`](../frontend/src/audio/) |
+| WS gateway (pumps, dedup, resumption, TOOL_AGENT) | [`backend/app/ws/gateway.py`](../backend/app/ws/gateway.py) |
+| Deterministic intent layer | [`backend/app/agents/intent.py`](../backend/app/agents/intent.py) |
+| Orchestrator (grounded tool executor) + specialist registry | [`backend/app/agents/orchestrator.py`](../backend/app/agents/orchestrator.py), [`specialists.py`](../backend/app/agents/specialists.py) |
+| Grounding gate | [`backend/app/grounding/whitelists.py`](../backend/app/grounding/whitelists.py), [`callbacks.py`](../backend/app/grounding/callbacks.py) |
+| Diagnosis workflow · LOTO state machine · alerts | [`backend/app/agents/workflows.py`](../backend/app/agents/workflows.py), [`tools/handlers.py`](../backend/app/agents/tools/handlers.py) |
+| Background diagnosis agent (qwen-plus) | [`backend/app/agents/diagnostic.py`](../backend/app/agents/diagnostic.py) |
+| Data layer (catalogs, telemetry, schematics) | [`backend/app/data/`](../backend/app/data/) |
+| Realtime session (WSS, one session.update at open) | [`backend/app/realtime/session.py`](../backend/app/realtime/session.py), [`events.py`](../backend/app/realtime/events.py) |
+| OSS + deployment proof | [`backend/app/cloud/alibaba.py`](../backend/app/cloud/alibaba.py) |
+| Models + endpoints config | [`backend/app/config.py`](../backend/app/config.py) |
 
 ## Why these decisions
 
