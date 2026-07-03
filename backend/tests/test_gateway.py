@@ -102,6 +102,7 @@ def bridge():
     b._response_active = False
     b._pending_response = False
     b._turn_nonce = 0
+    b._tool_fired_this_turn = False
     b._announced_alerts = set()
     b._pending_proactive = None
     b._bg_tasks = set()
@@ -1081,6 +1082,26 @@ def test_tool_agent_map_is_valid():
 
     for tool, agent in TOOL_AGENT.items():
         assert tool in schemas.TOOLS and agent in AGENTS
+
+
+# ── claim-vs-call harness (log-only) ─────────────────────────────────────────
+def test_claim_without_call_flags_when_no_tool_ran(bridge):
+    # FORGE narrates a screen action but no tool fired this turn -> flagged.
+    bridge._tool_fired_this_turn = False
+    assert bridge._check_claim_vs_call("Sure — I've brought up the specs on your screen now.") is True
+
+
+def test_claim_with_call_is_not_flagged(bridge):
+    # Same claim, but a real tool ran this turn -> not flagged.
+    bridge._tool_fired_this_turn = True
+    assert bridge._check_claim_vs_call("I've brought up the specs.") is False
+
+
+def test_no_claim_is_not_flagged(bridge):
+    # A reply with no screen-action claim is never flagged, even with no tool call.
+    bridge._tool_fired_this_turn = False
+    assert bridge._check_claim_vs_call("The torque spec is 95 newton metres.") is False
+    assert bridge._check_claim_vs_call("") is False
 
 
 # ── vision gating (manual 👁) ────────────────────────────────────────────────

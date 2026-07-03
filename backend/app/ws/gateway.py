@@ -117,6 +117,14 @@ def _mostly_non_latin(text: str) -> bool:
     return non_latin > 0 and non_latin >= max(1, latin)
 
 
+# Strong "I changed the screen" claims — used ONLY for the log-only claim-vs-call check below.
+_UI_CLAIM_PHRASES = (
+    "i've brought up", "i have brought up", "brought it up", "i've pulled up", "pulled it up",
+    "i've cleared", "i have cleared", "i've hidden", "i've hid", "i've shown", "i've displayed",
+    "i've highlighted", "i've rotated", "i've reset", "i've opened", "i've closed",
+    "up on your screen", "up on the screen", "on your screen now",
+)
+
 # Which specialist "owns" each tool — drives the agent-routing chips in the HUD.
 TOOL_AGENT = {
     "show_machine_data": "diagnostic",
@@ -286,9 +294,10 @@ class RealtimeBridge:
         self._spoke_over_forge = False  # the in-progress user turn began while FORGE was speaking
         self._forge_text_at_barge = ""  # FORGE's text when that user turn started
         self._turn_nonce = 0  # increments per user utterance (scopes relative-tool dedup to a turn)
+        self._tool_fired_this_turn = False  # for the claim-vs-call consistency check (log-only)
         self._last_user_text = ""  # most recent user utterance (guards unrequested procedure starts)
-        # Turn-scoped machine-data stacking: successive show_machine_data views within ONE user
-        # turn accumulate (rendered as stacked sections); a new turn resets to a single view.
+        # Machine-data sections live in SessionState.panel_sections (server-authoritative; persist
+        # across turns until a section/panel is hidden) — not on the bridge. See stack_section().
 
     # ── lifecycle ────────────────────────────────────────────────────────────
     async def run(self) -> None:
@@ -554,6 +563,7 @@ class RealtimeBridge:
         elif isinstance(evt, events.OutputTranscriptDone):
             self._text_done = True  # diagnostics: text finished
             self._forge_recent_text = evt.text
+            self._check_claim_vs_call(evt.text)  # log-only: claimed a UI action but no tool ran?
             await self._safe_send_json(protocol.transcript("assistant", text=evt.text, final=True))
             # NOTE: no auto-highlight from FORGE's own speech — highlighting fires ONLY on an
             # explicit user request (intent / native highlight_component), never spontaneously.
@@ -564,6 +574,7 @@ class RealtimeBridge:
         elif isinstance(evt, events.SpeechStarted):
             logger.info("VAD speech_started (forge_speaking=%s)", self._response_active)  # cutoff diagnostics
             self._turn_nonce += 1  # a new user utterance — relative rotations from here accumulate
+            self._tool_fired_this_turn = False  # reset the claim-vs-call tracker for the new turn
             self.session.set_speaking(True)  # open the image-append window (uncommitted audio)
             # Remember if this user turn began while FORGE was speaking (for the echo check).
             self._spoke_over_forge = self._response_active
@@ -731,6 +742,7 @@ class RealtimeBridge:
             else:
                 logger.info("deduped tool call %s", name)
                 return self._outcome_cache.get(key)
+        self._tool_fired_this_turn = True  # a real (non-deduped) tool ran this turn
         # Light up the specialist chip that owns this tool.
         agent = TOOL_AGENT.get(name)
         if agent:
@@ -768,6 +780,19 @@ class RealtimeBridge:
             await self._set_asset_label(self.orch.state.asset_id)
         await self._inject_ui_state()  # keep the model aware of what's now on screen
         return outcome
+
+    def _check_claim_vs_call(self, text: str) -> bool:
+        """Log-only harness check: if FORGE's spoken reply CLAIMS a UI action ("I've brought up /
+        cleared / hidden…") but no tool actually ran this turn, log it so the human can spot the
+        model narrating without calling. Returns True when a mismatch was found. (A corrective
+        context-inject was deliberately left out to avoid feedback loops before the demo.)"""
+        if not text or self._tool_fired_this_turn:
+            return False
+        low = text.lower()
+        if any(p in low for p in _UI_CLAIM_PHRASES):
+            logger.warning("claim-without-call: FORGE claimed a UI action but no tool ran this turn: %r", text[:140])
+            return True
+        return False
 
     def _panel_state_stale(self, tool: str, args: dict) -> bool:
         """True when a DUPLICATE visibility call's desired end-state does not hold in
