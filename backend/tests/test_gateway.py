@@ -142,6 +142,42 @@ async def test_apply_tool_runs_emits_panel_and_chip_and_dedups(bridge):
     assert n_tool_after == n_tool_before  # but not re-executed / re-emitted to the browser
 
 
+# ── state-aware dedup bypass for visibility tools ───────────────────────────
+async def test_hide_after_reset_view_reshows_still_hides(bridge):
+    # Live bug: "Reset the view and hide the model." Intent hides instantly; native reset_view
+    # re-shows the model panel; the native hide then DEDUPED against the intent hide and did
+    # nothing — panel left visible while FORGE announced it hidden. The dedup must yield to the
+    # real end-state: if the panel is visible again, a duplicate hide EXECUTES.
+    bridge._turn_nonce = 1
+    await bridge._apply_tool("hide_panel", {"panel": "model"})   # intent duplicate (hides)
+    await bridge._apply_tool("reset_view", {})                    # native — re-shows the model
+    assert "model" in bridge.orch.state.visible_panels
+    await bridge._apply_tool("hide_panel", {"panel": "model"})   # native duplicate (must execute)
+    assert "model" not in bridge.orch.state.visible_panels
+
+
+async def test_panel_dedup_still_collapses_true_duplicates(bridge):
+    # No regression: intent + native hide with NOTHING in between — the second call still
+    # dedupes (cached outcome, no re-execution) and the end-state stays hidden.
+    await bridge._apply_tool("show_panel", {"panel": "model"})
+    bridge.ws.json_sent.clear()
+    first = await bridge._apply_tool("hide_panel", {"panel": "model"})
+    n_after_first = len(bridge.ws.json_sent)
+    second = await bridge._apply_tool("hide_panel", {"panel": "model"})
+    assert second is first                          # cached — not re-run
+    assert len(bridge.ws.json_sent) == n_after_first  # nothing re-sent
+    assert "model" not in bridge.orch.state.visible_panels
+
+
+async def test_show_panel_duplicate_reexecutes_when_hidden_again(bridge):
+    # Inverse: show -> hidden by another tool -> duplicate show within the window EXECUTES.
+    await bridge._apply_tool("show_panel", {"panel": "overview"})
+    await bridge._apply_tool("hide_panel", {"panel": "overview"})
+    assert "overview" not in bridge.orch.state.visible_panels
+    await bridge._apply_tool("show_panel", {"panel": "overview"})  # duplicate — must re-show
+    assert "overview" in bridge.orch.state.visible_panels
+
+
 # ── turn-scoped stacked machine-data views ──────────────────────────────────
 def _md_panels(bridge):
     return [m for m in bridge.ws.json_sent if m["type"] == "panel" and m["panel"] == "machine_data"]

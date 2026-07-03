@@ -700,8 +700,15 @@ class RealtimeBridge:
             # runs and advances. (No arg canonicalization — turn-scoping only.)
             key = f"{name}:{json.dumps(args, sort_keys=True)}:turn{self._turn_nonce}"
         if self.dedup.is_duplicate(key, time.monotonic()):
-            logger.info("deduped tool call %s", name)
-            return self._outcome_cache.get(key)
+            if self._panel_state_stale(name, args):
+                # State-aware bypass: another tool changed visibility since the cached call
+                # (e.g. reset_view re-showed the model between an intent hide and the native
+                # hide) — the cached outcome no longer reflects the desired end-state, and the
+                # handlers are idempotent/self-healing, so EXECUTE instead of replaying cache.
+                logger.info("dedup bypass (stale panel state) %s", name)
+            else:
+                logger.info("deduped tool call %s", name)
+                return self._outcome_cache.get(key)
         # Light up the specialist chip that owns this tool.
         agent = TOOL_AGENT.get(name)
         if agent:
@@ -761,6 +768,24 @@ class RealtimeBridge:
         if len(self._md_sections) <= 1:
             return msg  # single view — payload identical to today
         return {**msg, "data": {**data, "sections": list(self._md_sections.values())}}
+
+    def _panel_state_stale(self, tool: str, args: dict) -> bool:
+        """True when a DUPLICATE visibility call's desired end-state does not hold in
+        state.visible_panels — i.e. another tool changed visibility since the cached call —
+        so the duplicate must execute instead of replaying the cache. Panel names resolve
+        with the same canonicalization as the dedup key. Only the idempotent visibility
+        tools are considered; every other tool keeps plain dedup."""
+        visible = self.orch.state.visible_panels
+        if tool == "hide_panel":
+            p = resolve_panel(args.get("panel", "")) or str(args.get("panel", "")).lower()
+            return bool(visible) if p == "all" else p in visible
+        if tool == "show_panel":
+            p = resolve_panel(args.get("panel", "")) or str(args.get("panel", "")).lower()
+            return p != "all" and p not in visible  # "all" keeps plain dedup (composite target)
+        if tool == "set_panels":
+            resolved = {resolve_panel(x) for x in (args.get("panels") or [])} - {None}
+            return visible != resolved
+        return False
 
     def _reset_md_sections_if_hidden(self, tool: str, args: dict) -> None:
         """Clear the machine-data accumulator whenever the panel leaves the screen (hide_panel
