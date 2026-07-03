@@ -447,6 +447,31 @@ def test_build_ui_state_reports_completed_checklist():
     assert "complete" in out and "step one" not in out.lower()
 
 
+def test_build_ui_state_drops_completed_awareness_after_hide_all():
+    # FIX 3: after an EXPLICIT full clear, SCREEN STATE describes ONLY what's visible — the
+    # just-completed-checklist awareness must NOT leak (it did: "showing ... safety checklist is
+    # complete" while nothing was on screen). The safety state machine stays intact / re-showable.
+    from app.ws.gateway import build_ui_state
+    from app.agents.session_state import SessionState
+    from app.agents.tools.handlers import run_safety_check, hide_panel
+
+    s = SessionState()
+    run_safety_check(s, {"check_type": "loto"})
+    for _ in range(len(s.active_safety["items"])):
+        run_safety_check(s, {"check_type": "loto", "action": "confirm"})
+    assert s.active_safety["complete"] is True and s.last_completed  # completed + awareness set
+    # UNCHANGED behavior: while any panel is visible, the completed-checklist awareness still shows
+    s.visible_panels.add("machine_data")
+    assert "complete" in build_ui_state(s)
+    # explicit full clear -> awareness text gone, screen genuinely empty
+    hide_panel(s, {"panel": "all"})
+    out = build_ui_state(s)
+    assert out == "nothing is displayed on the dashboard right now."
+    assert "complete" not in out and "checklist" not in out
+    # the safety state machine is untouched — the completed check is still on record (re-showable)
+    assert s.active_safety is not None and s.active_safety.get("complete") is True
+
+
 def test_build_ui_state_reports_todo_and_highlight():
     # SCREEN STATE leads with the to-do (next-to-perform); when viewing a different step it shows both.
     from app.ws.gateway import build_ui_state
@@ -917,12 +942,15 @@ async def test_workflow_step_speaks_via_create_response(bridge, monkeypatch):
     bridge._start_workflow("unclamp_fault")
     await bridge._advance_workflow()  # step 0
     assert any("AUTOPILOT WORKFLOW" in t for _r, t in bridge.session.injected)
-    assert bridge.session.responses == 1  # the non-gated run collapses into ONE consolidated turn
+    assert bridge.session.responses == 1  # the non-gated run + folded gate collapse into ONE turn
 
 
-async def test_workflow_condenses_to_two_narration_turns(bridge, monkeypatch):
-    # B3: all non-gated step tools run, but the narration collapses from 5 turns to ≤2 (one
-    # consolidated summary + the gated proposal), on top of the model's own initial ack.
+async def test_workflow_folds_run_and_gate_into_one_narration(bridge, monkeypatch):
+    # FIX 2: the run of non-gated steps AND the gated proposal collapse into ONE narration turn
+    # (the model's own ack is a separate turn). ONE inject_message carries every step line, the
+    # gate proposal + confirm ask, and the anti-repeat clause; the workflow pauses at the gate and
+    # the gated tool does NOT run until 'confirmed'. (Was: consolidated turn THEN a separate gate
+    # turn = the third spoken response that made FORGE repeat itself.)
     ran = []
 
     async def fake_apply(name, args):
@@ -930,13 +958,24 @@ async def test_workflow_condenses_to_two_narration_turns(bridge, monkeypatch):
 
     monkeypatch.setattr(bridge, "_apply_tool", fake_apply)
     monkeypatch.setattr(bridge, "_schedule_diagnosis", lambda *a, **k: None)
+    bridge.session.injected = []
     bridge.session.responses = 0
     bridge._start_workflow("unclamp_fault")
-    await bridge._advance_workflow()   # turn 1: 4 non-gated steps silently + ONE consolidated
-    await bridge._advance_workflow()   # turn 2: the gated step proposes + pauses
-    assert bridge.session.responses <= 2          # ≤2 workflow-narration responses
-    assert {"show_machine_data", "highlight_component"} <= set(ran)  # all non-gated tools ran
-    assert bridge._workflow["paused"] is True     # gate still pauses for confirmation
+    await bridge._advance_workflow()               # single advance: silent run + folded gate
+    autopilot = [t for _r, t in bridge.session.injected if "AUTOPILOT WORKFLOW" in t]
+    assert len(autopilot) == 1                     # exactly ONE narration inject...
+    assert bridge.session.responses == 1           # ...and ONE forced response
+    text = autopilot[0]
+    assert "open fault" in text and "telemetry" in text                 # non-gated step lines
+    assert "highlighting the drawbar" in text and "background diagnosis" in text
+    assert "drawbar inspection" in text and "confirmed" in text         # gate proposal + confirm ask
+    assert "do not repeat anything you said before" in text             # anti-repeat clause
+    assert {"show_machine_data", "highlight_component"} <= set(ran)      # all non-gated tools ran
+    assert bridge._workflow["paused"] is True                           # paused at the gate
+    assert "start_procedure" not in ran                                 # gated tool NOT auto-run
+    # a second advance while paused is a no-op -> narration stays at exactly ONE response
+    await bridge._advance_workflow()
+    assert bridge.session.responses == 1
 
 
 async def test_resync_rebuilds_state_after_reconnect(bridge):

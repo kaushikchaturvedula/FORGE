@@ -276,6 +276,44 @@ def test_panel_sections_state_machine():
     assert s.sections("machine_data") == []
 
 
+# ── machine-data: diagnosis view (Fix 3 — vocabulary/truth parity) ────────────
+def test_show_machine_data_diagnosis_none_is_graceful_not_rejected(state):
+    # data_type="diagnosis" is ACCEPTED by grounding (parity with the machine-data section vocab)
+    # and, with no diagnosis on file, returns a speakable status — never a rejection, never an
+    # empty section stacked over a (future) real one.
+    r = run(state, "show_machine_data", {"data_type": "diagnosis"})
+    assert r.output.get("error") != "rejected"
+    assert r.output.get("status") == "none"
+    assert "diagnose the fault" in r.output.get("message", "")
+    assert r.panel is None                                   # nothing shown
+    assert "machine_data" not in state.visible_panels
+    assert "diagnosis" not in state.panel_sections.get("machine_data", {})  # no empty section
+
+
+def test_show_machine_data_diagnosis_reemits_full_stack(state):
+    diag = {"root_cause": "drawbar wear", "confidence": "high",
+            "recommended_action": "inspect the drawbar", "evidence": "torque spike on unclamp"}
+    state.diagnosis = diag
+    state.stack_section("machine_data", "diagnosis", diag, key="diagnosis")
+    state.stack_section("machine_data", "faults", {"open_faults": []}, key="faults")  # prove no clobber
+    r = run(state, "show_machine_data", {"data_type": "diagnosis"})
+    assert r.output.get("error") != "rejected"
+    assert r.output["view"] == "diagnosis" and r.output["root_cause"] == "drawbar wear"
+    views = [s.get("view") for s in r.panel["data"]["sections"]]
+    assert "diagnosis" in views and "faults" in views       # full current stack re-emitted intact
+    assert "machine_data" in state.visible_panels           # panel re-shown
+
+
+def test_show_machine_data_diagnosis_restacks_from_state_when_section_cleared(state):
+    # The diagnosis lives on state.diagnosis but its section was cleared (e.g. screen wiped) —
+    # re-stack it rather than falsely reporting "none".
+    state.diagnosis = {"root_cause": "x", "confidence": "low", "recommended_action": "y"}
+    assert "machine_data" not in state.panel_sections
+    r = run(state, "show_machine_data", {"data_type": "diagnosis"})
+    assert r.panel and any(s.get("view") == "diagnosis" for s in r.panel["data"]["sections"])
+    assert state.panel_sections["machine_data"].get("diagnosis")  # re-stacked
+
+
 def test_clear_highlight_also_clears_schematic_focus(state):
     # highlight a detailed-schematic part -> focus set + a jump-navigate emitted
     hi = run(state, "highlight_component", {"name": "drawbar"})
@@ -316,9 +354,11 @@ def test_activate_vision_sets_state_and_control(state):
 
 def test_hide_all_panels(state):
     run(state, "show_panel", {"panel": "all"})
+    state.last_completed = {"kind": "safety", "title": "Pre-start safety check"}  # awareness from a prior completion
     r = run(state, "hide_panel", {"panel": "all"})
     assert state.visible_panels == set()
     assert r.control["action"] == "hide_panel"
+    assert state.last_completed is None  # Fix 3: a full clear also drops the completed-checklist awareness text
 
 
 # ── documentation ────────────────────────────────────────────────────────────

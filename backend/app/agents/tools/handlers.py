@@ -60,6 +60,30 @@ def show_machine_data(state: SessionState, args: dict) -> ToolResult:
     elif view == "faults":
         data = {"open_faults": machine.get("open_faults", [])}
         spoken = {"open_faults": machine.get("open_faults", [])}
+    elif view == "diagnosis":
+        # Show the STORED diagnosis (the background agent writes it as the "diagnosis" section and
+        # to state.diagnosis). Re-emit the current sections WITHOUT clobbering; if the section was
+        # cleared (e.g. screen wiped) but the diagnosis still exists, re-stack it; if there is none
+        # yet, return a graceful spoken status — never a grounding rejection.
+        stored = next((s for s in state.sections("machine_data") if s.get("view") == "diagnosis"), None)
+        if stored is not None:
+            dx = {k: v for k, v in stored.items() if k != "view"}
+            sections = state.sections("machine_data")
+        elif state.diagnosis:
+            dx = dict(state.diagnosis)
+            sections = state.stack_section("machine_data", "diagnosis", dx, key="diagnosis")
+        else:
+            return ToolResult(output={
+                "view": "diagnosis", "status": "none",
+                "message": "No diagnosis on file yet — say 'diagnose the fault' to run one.",
+            })
+        return ToolResult(
+            output={"asset_id": asset_id, "view": "diagnosis",
+                    "root_cause": dx.get("root_cause"), "confidence": dx.get("confidence"),
+                    "recommended_action": dx.get("recommended_action")},
+            panel={"panel": "machine_data",
+                   "data": {"asset_id": asset_id, "view": "diagnosis", **dx, "sections": sections}},
+        )
     else:
         data, spoken = {}, {}
 
@@ -512,6 +536,9 @@ def hide_panel(state: SessionState, args: dict) -> ToolResult:
         state.visible_panels.clear()
         state.panel_sections.clear()
         state.active_schematic = state.schematic_focus = state.active_highlight = None
+        state.last_completed = None  # an explicit full clear also drops the just-completed awareness
+        # text (SCREEN STATE then describes only what's visible — nothing); the safety/procedure
+        # state machines (active_safety/active_procedure) are untouched and stay re-showable.
         return ToolResult(output={"hidden": "all"}, control={"action": "hide_panel", "panel": "all"})
     already_hidden = panel not in state.visible_panels
     state.visible_panels.discard(panel)  # idempotent: a no-op if it was already hidden

@@ -34,3 +34,23 @@ def test_instructions_document_machine_data_section_stacking():
     text = realtime_instructions()
     assert "MACHINE-DATA SECTIONS" in text
     assert "PERSIST" in text
+
+
+def test_instructions_contain_autopilot_carveout():
+    # FIX 1: the honesty rules ("never claim a screen change you didn't call a tool for") must carry
+    # an explicit carve-out for server-performed AUTOPILOT WORKFLOW updates, or the model refuses to
+    # narrate them and repeats its previous answer.
+    text = realtime_instructions()
+    assert "AUTOPILOT EXCEPTION" in text
+    assert 'messages beginning "AUTOPILOT WORKFLOW —"' in text
+    assert "narrate them as done" in text
+    assert "never repeat sentences you already said this session" in text
+
+
+def test_instructions_contain_workflow_entry_fewshot():
+    # FIX 1: the multi-task few-shots must include the diagnosis-entry command so the model makes a
+    # SHORT ack (dismiss + clear + one line) and lets the autopilot drive — no menu choices.
+    text = realtime_instructions()
+    assert "Dismiss the alert, clear the screen, and diagnose" in text
+    assert "dismiss_alert" in text and 'hide_panel{panel:"all"}' in text
+    assert "watch the console" in text

@@ -39,7 +39,8 @@ TOOLS: dict[str, dict[str, Any]] = {
     "show_machine_data": _fn(
         "show_machine_data",
         "Call to show machine info on the console — nameplate, specs, live telemetry, maintenance "
-        "history, or open faults (e.g. 'show the specs', 'are there any open faults?').",
+        "history, open faults, or a stored diagnosis (e.g. 'show the specs', 'are there any open "
+        "faults?', 'show me the diagnosis').",
         {
             "asset_id": _ASSET,
             "data_type": {

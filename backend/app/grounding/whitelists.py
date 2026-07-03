@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from app.data.catalog import catalog
 
 # ── Fixed enum arguments (not catalog-resolved) ──────────────────────────────
-DATA_TYPES = {"nameplate", "specs", "telemetry", "maintenance", "history", "faults"}
+DATA_TYPES = {"nameplate", "specs", "telemetry", "maintenance", "history", "faults", "diagnosis"}
 MEASUREMENT_TYPES = {
     "spindle_torque",
     "rotational_speed",

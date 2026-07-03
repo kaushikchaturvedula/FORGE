@@ -964,25 +964,20 @@ class RealtimeBridge:
         # The model's free-form reply to the trigger plays first; step 0 runs on its ResponseDone.
 
     async def _advance_workflow(self) -> None:
-        """Advance the workflow in AT MOST 2 spoken turns: run the whole run of consecutive
-        NON-gated steps SILENTLY (their tools + panels update live), accumulate their grounded
-        one-liners, and speak ONE consolidated summary (turn 1). The gated step then proposes +
-        pauses on the next ResponseDone (turn 2). The confirm gate is unchanged."""
+        """Advance the workflow in ONE spoken turn: run the whole run of consecutive NON-gated
+        steps SILENTLY (their tools + panels update live), collect their grounded one-liners, and —
+        if the run stops AT a gated step — FOLD that step's proposal into the SAME consolidated
+        update and pause. The gate is unchanged (its tool still runs only on 'confirmed'). The
+        model's own free-form reply to the trigger is a separate turn, so a triggering command
+        yields the model's short ack + exactly ONE autopilot narration (ending in the confirm ask)."""
         wf = self._workflow
         if wf is None or wf["paused"]:
             return
         if wf["index"] >= len(wf["steps"]):
             self._complete_workflow()
             return
-        step = wf["steps"][wf["index"]]
-        if step.gate:
-            wf["paused"] = True
-            logger.info("workflow %s paused-for-confirm at step %d: propose %s",
-                        wf["name"], wf["index"], step.tool)
-            await self._speak_workflow_line(step)  # propose; the tool runs only on confirm
-            return
         # Run every consecutive non-gated step SILENTLY (no per-step create_response), collecting
-        # each step's grounded one-liner; then voice them as ONE update.
+        # each step's grounded one-liner.
         facts: list[str] = []
         while wf["index"] < len(wf["steps"]) and not wf["steps"][wf["index"]].gate:
             s = wf["steps"][wf["index"]]
@@ -994,8 +989,16 @@ class RealtimeBridge:
             if s.say:
                 facts.append(s.say)
             wf["index"] += 1
-        if facts:
-            await self._speak_workflow_consolidated(facts)
+        # If the run stopped at a gated step, propose it in the SAME turn and pause for the tech's
+        # confirmation (its tool runs only on 'confirmed' — gate semantics unchanged).
+        gate_say: str | None = None
+        if wf["index"] < len(wf["steps"]) and wf["steps"][wf["index"]].gate:
+            wf["paused"] = True
+            gate_say = wf["steps"][wf["index"]].say
+            logger.info("workflow %s paused-for-confirm at step %d: propose %s",
+                        wf["name"], wf["index"], wf["steps"][wf["index"]].tool)
+        if facts or gate_say:
+            await self._speak_workflow_consolidated(facts, gate_say=gate_say)
 
     async def _workflow_confirm(self) -> None:
         """The tech confirmed at the gate — run the final (gated) step's tool, then complete."""
@@ -1017,24 +1020,38 @@ class RealtimeBridge:
         self._workflow = None
 
     async def _speak_workflow_line(self, step) -> None:
-        """Voice one grounded step line at the safe point (inject the directive + create_response)."""
+        """Voice one grounded step line at the safe point (inject the directive + create_response).
+        Currently unused — the gated proposal is folded into _speak_workflow_consolidated; retained
+        for any future non-consolidated (single-line) workflow step."""
         try:
             await self.session.inject_message(
-                f"AUTOPILOT WORKFLOW — {step.say} Keep it to one short spoken sentence.",
+                f"AUTOPILOT WORKFLOW — {step.say} Keep it to one short spoken sentence. "
+                "Speak only this update — do not repeat anything you said before.",
                 role="system",
             )
             await self.session.create_response()
         except Exception as exc:  # noqa: BLE001
             logger.debug("workflow speak: %r", exc)
 
-    async def _speak_workflow_consolidated(self, facts: list[str]) -> None:
-        """Voice ONE consolidated update covering a run of silently-executed workflow steps."""
+    async def _speak_workflow_consolidated(self, facts: list[str], *, gate_say: str | None = None) -> None:
+        """Voice ONE consolidated update covering a run of silently-executed workflow steps. When
+        gate_say is set, the SAME update also proposes the gated next step and ends by asking the
+        tech to confirm (the tool still runs only on 'confirmed'). Framed as an AUTOPILOT WORKFLOW
+        line — actions the server ALREADY performed — so the model narrates them as done."""
         try:
-            await self.session.inject_message(
-                "AUTOPILOT WORKFLOW — give ONE short spoken update covering the following, in "
-                "order, as a few connected sentences (do not read a list): " + " ".join(facts),
-                role="system",
-            )
+            segments: list[str] = []
+            if facts:
+                segments.append(
+                    "give ONE short spoken update covering the following, in order, as a few "
+                    "connected sentences (do not read a list): " + " ".join(facts)
+                )
+            if gate_say:
+                lead = "Then, in the same breath, " if facts else ""
+                segments.append(lead + "propose the next step and END by asking the tech to "
+                                "confirm before it runs: " + gate_say)
+            body = ("AUTOPILOT WORKFLOW — " + " ".join(segments)
+                    + " Speak only this update — do not repeat anything you said before.")
+            await self.session.inject_message(body, role="system")
             await self.session.create_response()
         except Exception as exc:  # noqa: BLE001
             logger.debug("workflow consolidated speak: %r", exc)
