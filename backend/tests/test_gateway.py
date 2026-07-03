@@ -93,7 +93,6 @@ def bridge():
     b._want_session = asyncio.Event()
     b._connect_lock = asyncio.Lock()
     b._seen_event_types = set()
-    b._intent_ctx = {}
     b._last_highlight = None
     b._last_audio_at = 0.0
     b._native_tools_seen = False
@@ -286,20 +285,14 @@ async def test_tool_event_reports_real_status(bridge):
     assert tev2 and tev2[-1]["status"] == "called"
 
 
-# ── intent drives the panels from the user's transcript ─────────────────────
-async def test_transcript_intent_shows_telemetry_panel(bridge):
-    await bridge._on_user_transcript("what's the tool wear right now")
-    assert any(m["type"] == "panel" and m["panel"] == "machine_data" for m in bridge.ws.json_sent)
-    assert any(m["type"] == "agent" and m["agent"] == "diagnostic" for m in bridge.ws.json_sent)
-
-
-async def test_transcript_intent_torque_and_schematic(bridge):
-    await bridge._on_user_transcript("what's the torque on the tool-holder bolts")
-    assert any(m["type"] == "tool" and m["name"] == "lookup_torque" for m in bridge.ws.json_sent)
-    bridge.ws.json_sent.clear()
-    await bridge._on_user_transcript("show me the spindle assembly and jump to the drawbar")
-    names = [m["name"] for m in bridge.ws.json_sent if m["type"] == "tool"]
-    assert "show_schematic" in names and "navigate_schematic" in names
+async def test_machine_switch_dims_header_and_clears_machine_data(bridge):
+    # The one surviving transcript-triggered UI beat (locked decision 2): a machine switch dims
+    # the header AND clears the hero machine-data panel — relocated from the removed intent layer.
+    bridge.orch.state.visible_panels.add("machine_data")
+    await bridge._on_user_transcript("this is a different machine now")
+    assert any(m["type"] == "control" and m.get("action") == "asset" and m.get("label") == "general guidance"
+               for m in bridge.ws.json_sent)
+    assert "machine_data" not in bridge.orch.state.visible_panels
 
 
 async def test_threshold_alert_from_intentless_record(bridge):
@@ -900,7 +893,9 @@ async def test_workflow_abandoned_by_unrelated_utterance(bridge, monkeypatch):
                         "index": 1, "paused": False}
     await bridge._on_user_transcript("show me the spindle schematic")
     assert bridge._workflow is None                              # abandoned (no bulldozing)
-    assert "show_schematic" in calls                            # the new request is handled normally
+    # the new request is now handled by the model's native tool calls, not a server-side intent
+    # layer — so the gateway fires nothing itself for this (non-switch) utterance.
+    assert calls == []
 
 
 async def test_workflow_step_speaks_via_create_response(bridge, monkeypatch):

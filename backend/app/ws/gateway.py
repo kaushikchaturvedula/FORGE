@@ -258,7 +258,6 @@ class RealtimeBridge:
         self._want_session = asyncio.Event()
         self._connect_lock = asyncio.Lock()
         self._seen_event_types: set[str] = set()
-        self._intent_ctx: dict = {}  # per-connection context for intent (e.g. last rotate)
         self._last_highlight: str | None = None  # de-dupe auto-highlights
         self._last_audio_at = 0.0  # monotonic time of the last real mic audio
         self._native_tools_seen = False  # set once the model emits a native function call
@@ -660,12 +659,12 @@ class RealtimeBridge:
             # On-demand: generate a diagnosis if none exists yet (open fault + telemetry are
             # always grounded inputs). If one exists, FORGE just reads the injected context.
             self._schedule_diagnosis("user_request", "manual", self._diagnosis_inputs([]))
-        for name, args in intent.infer_tools(text, self._intent_ctx):
-            await self._apply_tool(name, args)
-            if name == "highlight_component":  # shared guard: don't re-pulse when FORGE echoes it
-                self._last_highlight = args.get("name")
+        # The realtime model natively drives all tools/UI from here — no deterministic per-tool
+        # inference. The only transcript-triggered server behaviours are the curated workflow
+        # (above), on-demand diagnosis (above), and the machine-switch demo beat (below).
         if intent.is_machine_switch(text):
             await self._set_asset_label("general guidance")
+            await self._apply_tool("hide_panel", {"panel": "machine_data"})  # clear the hero data on a switch
 
     # ── tool execution (panel + routing-chip updates) ────────────────────────
     async def _apply_tool(self, name: str, args: dict):
