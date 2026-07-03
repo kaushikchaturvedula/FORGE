@@ -53,6 +53,43 @@ def test_clear_and_hide_panels():
     assert ("hide_panel", {"panel": "model"}) in infer_tools("hide the 3d model", {})
 
 
+def test_clear_all_needs_screen_as_object_not_a_locative_qualifier():
+    # "on/from the screen" is a LOCATION for the real object ("the highlight"), not "clear the
+    # screen" — it must NOT wipe the whole dashboard.
+    assert infer_tools("clear the highlight on the screen", {}) == []
+    assert infer_tools("dismiss the alert on the screen", {}) == []
+    assert infer_tools("clear the highlight from the screen", {}) == []
+
+
+def test_clear_all_still_fires_on_real_clear_all_lines():
+    # Live demo lines — the clear-all must stay byte-for-byte.
+    assert ("hide_panel", {"panel": "all"}) in infer_tools("clear the screen", {})
+    assert ("hide_panel", {"panel": "all"}) in infer_tools("clear everything — we're done", {})
+    # conjunction: the screen IS an object here ("...and the screen")
+    assert ("hide_panel", {"panel": "all"}) in infer_tools("clear the highlight and the screen", {})
+    assert ("hide_panel", {"panel": "all"}) in infer_tools("clear the screen. now — is the work envelope clear and safe to start", {})
+    # compound line still triggers the workflow too
+    from app.agents import workflows
+    line = "dismiss the alert, clear the screen — and diagnose the unclamp fault"
+    assert ("hide_panel", {"panel": "all"}) in infer_tools(line, {})
+    assert workflows.match_workflow(line) == "unclamp_fault"
+    # compound line still fires the work-order log entry too
+    ex = "hide everything except the work-order log — and log that i changed the tool"
+    calls = infer_tools(ex, {})
+    assert ("hide_panel", {"panel": "all"}) in calls
+    assert ("log_event", {"event_type": "note", "note": "i changed the tool"}) in calls
+
+
+def test_clear_all_fix_leaves_neighbors_unchanged():
+    assert infer_tools("what's on the screen right now", {}) == []          # no hide trigger
+    assert infer_tools("hide the machine data", {}) == [("hide_panel", {"panel": "machine_data"})]
+    # "hide the 3d model" keeps its pre-existing behavior: the "3d model" cue reveals the panel
+    # first, then hides it (a native no-op UX quirk unrelated to this fix). Assert it's unchanged
+    # AND never becomes a whole-screen wipe.
+    assert infer_tools("hide the 3d model", {}) == [("show_panel", {"panel": "model"}), ("hide_panel", {"panel": "model"})]
+    assert ("hide_panel", {"panel": "all"}) not in infer_tools("hide the 3d model", {})
+
+
 def test_model_commands_reveal_panel_but_never_rotate():
     # NATIVE-ONLY: the intent fallback only REVEALS the 3D-model panel; it must NOT emit any
     # rotate_model/set_rotation/reset_view (the realtime model's function call is the single

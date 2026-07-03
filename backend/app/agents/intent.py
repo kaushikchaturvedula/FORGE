@@ -67,7 +67,11 @@ def infer_tools(transcript: str, ctx: dict | None = None) -> list[tuple[str, dic
 
     # ── hide / clear panels (infra already exists; just fire it) ──────────────
     if _has(t, *_HIDE_TRIGGERS):
-        if _has(t, *_CLEAR_ALL):
+        # "on/from/off the screen" is a LOCATION qualifier for the real object ("clear the
+        # highlight on the screen"), not the object of the hide verb — strip it so it no longer
+        # reads as "clear the screen". The specific-panel loop below keeps using the full text.
+        t_clear = re.sub(r"\b(?:on|from|off|at|across)\s+the\s+screen\b", " ", t)
+        if _has(t_clear, *_CLEAR_ALL):
             calls.append(("hide_panel", {"panel": "all"}))
         else:
             for phrase, panel in _HIDE_PANEL_WORDS:
