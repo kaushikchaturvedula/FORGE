@@ -223,6 +223,57 @@ async def test_machine_data_hide_clears_accumulator(bridge):
     assert "sections" not in data and data["view"] == "faults"
 
 
+async def test_lookup_part_and_torque_stack_within_one_turn(bridge):
+    # The gap: lookup_part + lookup_torque ALSO emit machine-data panels; within one turn both
+    # views must stack instead of the torque overwriting the part.
+    bridge._turn_nonce = 1
+    await bridge._apply_tool("lookup_part", {"query": "drawbar"})
+    await bridge._apply_tool("lookup_torque", {"fastener_id": "tool_holder_bolt"})
+    last = _md_panels(bridge)[-1]["data"]
+    assert [s["view"] for s in last.get("sections", [])] == ["part", "torque"]
+
+
+async def test_show_machine_data_and_lookup_stack(bridge):
+    # Mixed sources stack too (a native show_machine_data view + a lookup view).
+    bridge._turn_nonce = 1
+    await bridge._apply_tool("show_machine_data", {"data_type": "faults"})
+    await bridge._apply_tool("lookup_torque", {"fastener_id": "tool_holder_bolt"})
+    last = _md_panels(bridge)[-1]["data"]
+    assert [s["view"] for s in last.get("sections", [])] == ["faults", "torque"]
+
+
+async def test_same_view_different_items_stack(bridge):
+    # Two DIFFERENT parts in one turn -> two sections (keyed by view + item id, not just view,
+    # so the second part does NOT overwrite the first).
+    bridge._turn_nonce = 1
+    await bridge._apply_tool("lookup_part", {"query": "drawbar"})
+    await bridge._apply_tool("lookup_part", {"query": "coolant union"})
+    secs = _md_panels(bridge)[-1]["data"]["sections"]
+    assert [s["part"]["id"] for s in secs] == ["drawbar", "coolant_union"]
+    # re-asking the SAME part is deduped at the gateway (default name+args key) -> no fresh panel,
+    # no duplicate section: the stack stays exactly the two distinct parts.
+    await bridge._apply_tool("lookup_part", {"query": "drawbar"})
+    secs = _md_panels(bridge)[-1]["data"]["sections"]
+    assert [s["part"]["id"] for s in secs] == ["drawbar", "coolant_union"]
+
+
+async def test_lookup_new_turn_resets_and_hide_clears(bridge):
+    # The generalized (message-gated) accumulator keeps the turn-reset and hide-reset invariants.
+    bridge._turn_nonce = 1
+    await bridge._apply_tool("lookup_part", {"query": "drawbar"})
+    await bridge._apply_tool("lookup_torque", {"fastener_id": "tool_holder_bolt"})
+    bridge._turn_nonce += 1  # new utterance -> single view again
+    await bridge._apply_tool("lookup_part", {"query": "coolant union"})
+    data = _md_panels(bridge)[-1]["data"]
+    assert "sections" not in data and data["view"] == "part"
+    await bridge._apply_tool("show_machine_data", {"data_type": "faults"})  # distinct view, same turn -> stacks
+    assert [s["view"] for s in _md_panels(bridge)[-1]["data"]["sections"]] == ["part", "faults"]
+    await bridge._apply_tool("hide_panel", {"panel": "all"})  # clears the accumulator
+    await bridge._apply_tool("show_machine_data", {"data_type": "specs"})  # distinct, single after clear
+    data = _md_panels(bridge)[-1]["data"]
+    assert "sections" not in data and data["view"] == "specs"
+
+
 async def test_tool_event_reports_real_status(bridge):
     # HUD truth: a grounding-rejected call shows "rejected", a valid one shows "called".
     bridge.ws.json_sent.clear()

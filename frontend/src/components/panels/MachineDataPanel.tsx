@@ -3,6 +3,7 @@ import { Empty } from "../Panel";
 const SECTION_LABEL: Record<string, string> = {
   nameplate: "Nameplate", specs: "Specs", telemetry: "Telemetry",
   maintenance: "Maintenance history", history: "Maintenance history", faults: "Open faults",
+  part: "Part", torque: "Torque spec",
 };
 
 export function MachineDataPanel({ data }: { data: any }) {

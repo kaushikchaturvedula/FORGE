@@ -749,22 +749,27 @@ class RealtimeBridge:
         return outcome
 
     def _stack_machine_data(self, tool: str, msg: dict) -> dict:
-        """Turn-scoped stacking for the machine-data panel: within ONE user turn, successive
-        show_machine_data views accumulate and the outgoing panel payload additionally carries
+        """Turn-scoped stacking for the machine-data panel: within ONE user turn, successive views
+        that render on it (show_machine_data AND lookup_part / lookup_torque — all emit a
+        machine-data panel) accumulate, and the outgoing payload additionally carries
         `sections` = [{view, ...data}, ...] in call order (top-level view/data keys unchanged —
-        additive only). The first call of a NEW turn resets to that single view. Returns a
-        rewritten COPY when stacking applies; the cached outcome is never mutated."""
-        if tool != "show_machine_data" or msg.get("type") != "panel" or msg.get("panel") != "machine_data":
+        additive only). The first call of a NEW turn resets. Different ITEMS of the same view (two
+        parts) stack; re-asking the SAME item refreshes-and-moves-last. Returns a rewritten COPY;
+        the cached outcome is never mutated. (Gated on the MESSAGE, not the tool name.)"""
+        if msg.get("type") != "panel" or msg.get("panel") != "machine_data":
             return msg
         data = msg.get("data") or {}
         view = data.get("view")
         if not view:
             return msg
+        item = data.get(view)  # part/torque carry an item dict with an id; other views don't
+        item_id = item.get("id") if isinstance(item, dict) else None
+        skey = f"{view}:{item_id}" if item_id else view
         if self._md_turn != self._turn_nonce:  # new user utterance — back to a single view
             self._md_turn = self._turn_nonce
             self._md_sections = {}
-        self._md_sections.pop(view, None)  # re-asking a view refreshes it and moves it last
-        self._md_sections[view] = data
+        self._md_sections.pop(skey, None)  # re-asking the same key refreshes it and moves it last
+        self._md_sections[skey] = data
         if len(self._md_sections) <= 1:
             return msg  # single view — payload identical to today
         return {**msg, "data": {**data, "sections": list(self._md_sections.values())}}
