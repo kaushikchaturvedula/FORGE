@@ -59,6 +59,7 @@ FastAPI Gateway  ──  dual async tasks (upstream / downstream)
 Orchestration  ──  ONE Qwen-Omni-Realtime session (full 25-tool catalog at session open)
   │  10 specialist roles (orchestrator + 8 specialists + Field_Advisor)
   │  per-tool routing: every executed tool lights its owning specialist's HUD chip (TOOL_AGENT)
+  │  async off-loop → qwen-plus diagnosis agent (HTTPS chat-completions) writes a "diagnosis" panel
   ▼
 Grounding layer  ──  argument whitelists · tool-only facts · LOTO verbal gating
   │
@@ -76,6 +77,25 @@ See [docs/architecture.md](docs/architecture.md) for the full diagram.
 > "transfer" layer (`session.update` per handoff) was built and unit-tested during
 > development, but is not enabled at runtime — no swap latency, no risk of dropped
 > tool calls mid-swap, simpler session resumption.
+
+### Two agents, two Qwen models — a System-1/System-2 split
+
+FORGE runs **two cooperating agents on two Qwen models**, and neither blocks the other:
+
+- **Front agent — `qwen3.5-omni-plus-realtime` (System-1).** One bidirectional session that listens,
+  sees the camera, and drives all 25 grounded tools in sub-second turns. By design it does no deep
+  failure analysis — latency is the priority.
+- **Diagnosis agent — `qwen-plus` (System-2).** Slow, deliberate root-cause reasoning over HTTPS
+  chat-completions (default; `FORGE_DIAGNOSTIC_MODEL`, same DashScope key), run **asynchronously off
+  the realtime loop** so the voice conversation never stalls waiting on it.
+- **Three triggers, one single-flight scheduler.** A diagnosis is scheduled by a telemetry threshold
+  breach on `record_measurement`, by the autopilot workflow's diagnosis step, or by an on-demand
+  "diagnose…" request — de-duped so a given condition is analysed once.
+- **Grounded handback, not chatter.** The structured verdict (root cause · confidence · recommended
+  action · evidence) lands as a machine-data **`diagnosis` panel section** the technician sees, plus a
+  silently-injected context line FORGE reads aloud **only when asked** — it never barges in.
+
+See [`backend/app/agents/diagnostic.py`](backend/app/agents/diagnostic.py).
 
 ---
 

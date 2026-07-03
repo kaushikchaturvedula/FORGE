@@ -45,7 +45,7 @@ flowchart TB
 
   subgraph QWEN["Qwen Cloud — DashScope"]
     RT["qwen-omni-realtime — ONE bidirectional session<br/>audio + vision frames + 25 function tools<br/>configured once at session open · server VAD"]:::cloud
-    QP["qwen-plus — async background diagnosis agent<br/>off the realtime loop"]:::cloud
+    QP["qwen-plus — async diagnosis agent<br/>deliberate reasoning · off the realtime loop"]:::cloud
   end
 
   OSS["Alibaba Cloud OSS<br/>assets via oss2 · /cloud/health deployment proof"]:::cloud
@@ -60,7 +60,8 @@ flowchart TB
   GROUND -->|"validated handlers read"| CAT
   GROUND -->|"record + check thresholds"| AI4I
   GW <-->|"WSS realtime — audio · frames · tool calls"| RT
-  AUTO -.->|"HTTPS chat-completions"| QP
+  AUTO -.->|"requests diagnosis (async HTTPS)"| QP
+  QP -.->|"verdict → diagnosis panel + silent context"| GW
   OSS -.->|"assets at startup (oss2)"| CAT
 ```
 
@@ -106,6 +107,22 @@ grounding validation, panel/section state, and dedup. The one surviving transcri
 is machine-switch detection ([`intent.py`](../backend/app/agents/intent.py)): on "I'm on a
 different machine now" the gateway dims the header and clears stale hero data — a UX beat
 the model shouldn't have to infer.
+
+**Why two agents (and two models).** The realtime model is optimized for latency, not deliberation,
+so deep failure analysis is offloaded to a second Qwen model — `qwen-plus` (default; over HTTPS
+chat-completions, overridable via `FORGE_DIAGNOSTIC_MODEL`, same DashScope key) — run
+**asynchronously off the realtime loop** so the conversation never stalls. It is a System-1 /
+System-2 split: the fast reflexive front agent handles the turn; the slow deliberate agent reasons
+about root cause in the background, and neither blocks the other. Three independent triggers schedule
+a diagnosis — a telemetry threshold breach on `record_measurement`, the autopilot workflow's
+diagnosis step, and an on-demand "diagnose…" request — all funnelled through one single-flight
+scheduler (`_schedule_diagnosis`, de-duped so a condition is analysed once), not the workflow engine
+alone. The structured verdict (root cause · confidence · recommended action · evidence) is handed
+back through the **same** server-authoritative section state the tools use: a machine-data
+`diagnosis` section the technician sees immediately, plus a silently-injected context line FORGE
+reads aloud only when asked — no unprompted interruption. See
+[`diagnostic.py`](../backend/app/agents/diagnostic.py) and
+[`workflows.py`](../backend/app/agents/workflows.py).
 
 **Grounding is structural, not prompted-hope.** Every fact-bearing answer must come
 from a tool call, and every tool argument is validated against the catalog before the

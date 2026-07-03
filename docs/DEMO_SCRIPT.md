@@ -1,8 +1,8 @@
 # FORGE — 3-Minute Demo Script
 
 **Goal:** show *listen + see + act + document* in one continuous voice flow on a CNC
-machining center, proving every step runs through the multi-agent brain on Qwen Cloud,
-on Alibaba Cloud.
+machining center, proving every step runs through the grounded dual-agent stack on Qwen
+Cloud (a realtime voice agent plus an async qwen-plus diagnosis agent), on Alibaba Cloud.
 
 ## Setup (before recording)
 

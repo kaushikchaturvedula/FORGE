@@ -59,6 +59,13 @@ value, or safety step impossible.
   field instrument.
 - **Human-in-the-loop safety**: the Safety Agent will not advance a LOTO step without
   the technician's spoken confirmation — a hard checkpoint at a critical decision point.
+- **Two Qwen models cooperating — a System-1 / System-2 split**: a realtime front agent
+  (`qwen3.5-omni-plus-realtime`) handles sub-second voice + vision + tools, while a separate
+  `qwen-plus` agent reasons about root cause **asynchronously off the realtime loop** (HTTPS
+  chat-completions) and hands a structured verdict (root cause · confidence · recommended action ·
+  evidence) back as a grounded machine-data `diagnosis` section
+  ([`diagnostic.py`](../backend/app/agents/diagnostic.py)) — each Qwen Cloud model doing the job it
+  is best at, neither blocking the other.
 
 ### Problem Value & Impact — 25%
 - Unplanned CNC downtime costs **thousands of dollars per minute**, and field reports
