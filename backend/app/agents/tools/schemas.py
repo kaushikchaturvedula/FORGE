@@ -239,8 +239,13 @@ TOOLS: dict[str, dict[str, Any]] = {
     "hide_panel": _fn(
         "hide_panel",
         "Call to hide ONE named panel (e.g. 'hide the spindle schematic'); only 'all' clears the "
-        "whole console — never use 'all' for a specific hide.",
-        {"panel": {"type": "string", "enum": sorted(wl.PANELS), "description": "Panel to hide."}},
+        "whole console — never use 'all' for a specific hide. For the machine-data panel, pass "
+        "`section` to remove ONE stacked section (e.g. 'hide the specs' -> "
+        "hide_panel(panel='machine_data', section='specs')) — the other sections stay; hide the "
+        "last section and the panel closes. Omit `section` to hide the whole panel.",
+        {"panel": {"type": "string", "enum": sorted(wl.PANELS), "description": "Panel to hide."},
+         "section": {"type": "string", "enum": sorted(wl.MD_SECTION_VIEWS),
+                     "description": "Optional: one machine-data section to remove (nameplate/specs/telemetry/maintenance/faults/part/torque/diagnosis)."}},
         ["panel"],
     ),
     "activate_vision": _fn(

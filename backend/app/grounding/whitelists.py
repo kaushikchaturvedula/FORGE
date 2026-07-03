@@ -70,6 +70,32 @@ def resolve_panel(name: str) -> str | None:
     return best
 
 
+# Machine-data panel section views + spoken aliases (for hide_panel(machine_data, section=…)).
+MD_SECTION_VIEWS = {"nameplate", "specs", "telemetry", "maintenance", "history", "faults", "part", "torque", "diagnosis"}
+_MD_SECTION_ALIASES = {
+    "spec": "specs", "specifications": "specs", "fault": "faults", "open faults": "faults",
+    "alarm": "faults", "alarms": "faults", "name plate": "nameplate", "readings": "telemetry",
+    "live data": "telemetry", "service history": "maintenance", "part number": "part",
+    "torque spec": "torque", "torque value": "torque", "diagnostic": "diagnosis",
+}
+
+
+def resolve_md_section(name: str) -> str | None:
+    """Map a spoken machine-data section name ('the specs', 'torque spec') to a section view."""
+    n = str(name or "").lower().strip()
+    if n in MD_SECTION_VIEWS:
+        return n
+    if n in _MD_SECTION_ALIASES:
+        return _MD_SECTION_ALIASES[n]
+    for alias, view in _MD_SECTION_ALIASES.items():
+        if alias in n:
+            return view
+    for view in MD_SECTION_VIEWS:
+        if view in n:
+            return view
+    return None
+
+
 @dataclass(frozen=True)
 class ValidationResult:
     ok: bool
@@ -183,6 +209,9 @@ def validate(tool_name: str, args: dict) -> ValidationResult:
                 f"I'm not sure which panel {args.get('panel')!r} is — ask which one (machine "
                 f"data, schematic, machine map, 3D model, checklist, measurements, work log)."
             )
+        section = args.get("section")
+        if section and resolve_md_section(section) is None:
+            return _reject(f"I don't have a {section!r} section to hide on the machine-data panel.")
         return _OK
 
     if tool_name == "set_panels":

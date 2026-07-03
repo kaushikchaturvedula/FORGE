@@ -202,6 +202,13 @@ def build_ui_state(state: SessionState) -> str:
             r = state.model_rotation
             parts.append(f"the 3D model (rotation: X {int(r.get('x', 0))}°, Y {int(r.get('y', 0))}°, "
                          f"Z {int(r.get('z', 0))}°)")
+        elif p == "machine_data":
+            names = []
+            for sec in state.sections("machine_data"):
+                v = sec.get("view", "")
+                item = sec.get(v)  # part/torque carry an item id
+                names.append(f"{v}: {item['id']}" if isinstance(item, dict) and item.get("id") else v)
+            parts.append(f"the machine-data panel ({', '.join(names)})" if names else "the machine-data panel")
         elif p in _PANEL_PHRASE:
             parts.append(_PANEL_PHRASE[p])
     # A just-finished checklist auto-hides its panel — keep the agent AWARE it's done (so it never
@@ -282,8 +289,6 @@ class RealtimeBridge:
         self._last_user_text = ""  # most recent user utterance (guards unrequested procedure starts)
         # Turn-scoped machine-data stacking: successive show_machine_data views within ONE user
         # turn accumulate (rendered as stacked sections); a new turn resets to a single view.
-        self._md_sections: dict[str, dict] = {}  # view -> panel data, in call order
-        self._md_turn = -1  # the _turn_nonce the accumulator belongs to
 
     # ── lifecycle ────────────────────────────────────────────────────────────
     async def run(self) -> None:
@@ -435,8 +440,12 @@ class RealtimeBridge:
                         logger.debug("idle close: %r", exc)
             elif action == "resync":
                 # After a reconnect the client re-asserts the on-screen UI — rebuild SessionState
-                # from it so the server's SCREEN STATE matches the screen, then re-inject.
+                # (a fresh per-connection state) from it so the server's SCREEN STATE matches the
+                # screen, re-render the machine-data sections faithfully, then re-inject.
                 self._apply_resync(payload.get("state") or {})
+                secs = self.orch.state.sections("machine_data")
+                if secs and "machine_data" in self.orch.state.visible_panels:
+                    await self._safe_send_json(protocol.panel("machine_data", {**secs[-1], "sections": secs}))
                 await self._inject_ui_state(force=True)
 
     def _apply_resync(self, snap: dict) -> None:
@@ -481,7 +490,21 @@ class RealtimeBridge:
             st.active_schematic = resolved[0]
             st.schematic_focus = sch.get("focus")
         st.active_highlight = snap.get("highlight") or None
-        logger.info("resync applied: panels=%s rot=%s", sorted(st.visible_panels), st.model_rotation)
+        # Machine-data is a nested server-authoritative section state; a fresh per-connection
+        # SessionState has none, so rebuild it from the client's re-asserted section list (the
+        # client kept it in React state across the socket drop). Fixes the post-reconnect
+        # "SPECS-only" artifact where a single-view re-emit wiped the other sections.
+        st.panel_sections.pop("machine_data", None)
+        md = snap.get("machine_data") or {}
+        for sec in md.get("sections") or []:
+            view = sec.get("view")
+            if not view:
+                continue
+            item = sec.get(view)
+            skey = f"{view}:{item['id']}" if isinstance(item, dict) and item.get("id") else view
+            st.stack_section("machine_data", view, {k: v for k, v in sec.items() if k != "view"}, key=skey)
+        logger.info("resync applied: panels=%s rot=%s md_sections=%d",
+                    sorted(st.visible_panels), st.model_rotation, len(st.sections("machine_data")))
 
     # ── downstream: Qwen -> browser (lazy connect + resume) ──────────────────
     async def _downstream(self) -> None:
@@ -735,9 +758,8 @@ class RealtimeBridge:
             logger.info("hide_panel not_shown: %r -> %r; visible=%s",
                         args.get("panel"), outcome.model_output.get("not_shown"),
                         sorted(self.orch.state.visible_panels))
-        self._reset_md_sections_if_hidden(name, args)  # stale sections never resurface
         for msg in outcome.frontend:
-            await self._safe_send_json(self._stack_machine_data(name, msg))
+            await self._safe_send_json(msg)
         latency_ms = (time.monotonic() - t0) * 1000
         await self._safe_send_json(
             protocol.metrics(self.orch.metrics.count, self.orch.metrics.last_tool, self.orch.metrics.rejected, latency_ms)
@@ -746,32 +768,6 @@ class RealtimeBridge:
             await self._set_asset_label(self.orch.state.asset_id)
         await self._inject_ui_state()  # keep the model aware of what's now on screen
         return outcome
-
-    def _stack_machine_data(self, tool: str, msg: dict) -> dict:
-        """Turn-scoped stacking for the machine-data panel: within ONE user turn, successive views
-        that render on it (show_machine_data AND lookup_part / lookup_torque — all emit a
-        machine-data panel) accumulate, and the outgoing payload additionally carries
-        `sections` = [{view, ...data}, ...] in call order (top-level view/data keys unchanged —
-        additive only). The first call of a NEW turn resets. Different ITEMS of the same view (two
-        parts) stack; re-asking the SAME item refreshes-and-moves-last. Returns a rewritten COPY;
-        the cached outcome is never mutated. (Gated on the MESSAGE, not the tool name.)"""
-        if msg.get("type") != "panel" or msg.get("panel") != "machine_data":
-            return msg
-        data = msg.get("data") or {}
-        view = data.get("view")
-        if not view:
-            return msg
-        item = data.get(view)  # part/torque carry an item dict with an id; other views don't
-        item_id = item.get("id") if isinstance(item, dict) else None
-        skey = f"{view}:{item_id}" if item_id else view
-        if self._md_turn != self._turn_nonce:  # new user utterance — back to a single view
-            self._md_turn = self._turn_nonce
-            self._md_sections = {}
-        self._md_sections.pop(skey, None)  # re-asking the same key refreshes it and moves it last
-        self._md_sections[skey] = data
-        if len(self._md_sections) <= 1:
-            return msg  # single view — payload identical to today
-        return {**msg, "data": {**data, "sections": list(self._md_sections.values())}}
 
     def _panel_state_stale(self, tool: str, args: dict) -> bool:
         """True when a DUPLICATE visibility call's desired end-state does not hold in
@@ -790,19 +786,6 @@ class RealtimeBridge:
             resolved = {resolve_panel(x) for x in (args.get("panels") or [])} - {None}
             return visible != resolved
         return False
-
-    def _reset_md_sections_if_hidden(self, tool: str, args: dict) -> None:
-        """Clear the machine-data accumulator whenever the panel leaves the screen (hide_panel
-        machine_data/all — incl. the machine-switch intent — or a set_panels keep-set without
-        machine_data), so stale sections never resurface on the next view."""
-        if tool == "hide_panel":
-            p = resolve_panel(args.get("panel", "")) or str(args.get("panel", "")).lower()
-            if p in ("machine_data", "all"):
-                self._md_sections = {}
-        elif tool == "set_panels":
-            resolved = {resolve_panel(x) for x in (args.get("panels") or [])}
-            if "machine_data" not in resolved:
-                self._md_sections = {}
 
     async def _set_asset_label(self, label: str) -> None:
         if label == self._asset_label:
@@ -921,9 +904,11 @@ class RealtimeBridge:
         self._diagnosis_done_sig = signature
         self.orch.state.diagnosis = result
         logger.info("diagnosis ready: %s (%s)", result.get("root_cause"), result.get("confidence"))
-        # Surface visually on the existing machine-data panel (reuse, no new panel type).
+        # Surface visually as a `diagnosis` SECTION on the machine-data panel — through the same
+        # server-authoritative section state as the tool handlers (no direct-bypass overwrite).
         self.orch.state.visible_panels.add("machine_data")
-        await self._safe_send_json(protocol.panel("machine_data", {"view": "diagnosis", **result}))
+        sections = self.orch.state.stack_section("machine_data", "diagnosis", result, key="diagnosis")
+        await self._safe_send_json(protocol.panel("machine_data", {"view": "diagnosis", **result, "sections": sections}))
         # Queue a SILENT context line so FORGE can read it aloud when asked (no auto-interrupt).
         self._pending_diagnosis_text = (
             f"BACKGROUND DIAGNOSIS (ready, do not announce unprompted; read it only if the "

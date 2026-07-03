@@ -206,10 +206,15 @@ function buildResync(s: State) {
     : null;
   const sch = s.panels.schematic || {};
   const schematic = sch.diagram_type ? { diagram: sch.diagram_type, focus: sch.navigate?.target ?? null } : null;
+  // Machine-data is a server-authoritative nested section state; the server rebuilds a FRESH
+  // per-connection state on reconnect, so re-assert the sections we still hold in React state
+  // (fixes the post-reconnect "SPECS-only" artifact).
+  const mdSecs = s.panels.machine_data?.sections;
+  const machine_data = Array.isArray(mdSecs) && mdSecs.length ? { sections: mdSecs } : null;
   return {
     type: "control" as const,
     action: "resync",
-    state: { visible, model_rotation: s.modelCmd.rotation ?? { x: 0, y: 0, z: 0 }, procedure, safety, schematic, highlight: s.highlight?.component ?? null },
+    state: { visible, model_rotation: s.modelCmd.rotation ?? { x: 0, y: 0, z: 0 }, procedure, safety, schematic, highlight: s.highlight?.component ?? null, machine_data },
   };
 }
 

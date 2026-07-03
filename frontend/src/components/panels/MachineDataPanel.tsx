@@ -8,8 +8,8 @@ const SECTION_LABEL: Record<string, string> = {
 
 export function MachineDataPanel({ data }: { data: any }) {
   if (!data?.view) return <Empty>Ask for the nameplate, specs, telemetry, history, or a part / torque spec.</Empty>;
-  // Turn-scoped stacking: when one spoken turn asked for several views, the payload carries
-  // `sections` (in call order) — render them stacked. Single view renders exactly as before.
+  // The server sends the FULL section list (server-authoritative, persists across turns until a
+  // section/panel is hidden). >1 section renders stacked; a single section renders as one view.
   const sections: any[] = Array.isArray(data.sections) ? data.sections : [];
   if (sections.length > 1) {
     return (

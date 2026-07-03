@@ -102,8 +102,6 @@ def bridge():
     b._response_active = False
     b._pending_response = False
     b._turn_nonce = 0
-    b._md_sections = {}
-    b._md_turn = -1
     b._announced_alerts = set()
     b._pending_proactive = None
     b._bg_tasks = set()
@@ -177,100 +175,110 @@ async def test_show_panel_duplicate_reexecutes_when_hidden_again(bridge):
     assert "overview" in bridge.orch.state.visible_panels
 
 
-# ── turn-scoped stacked machine-data views ──────────────────────────────────
+# ── server-authoritative nested machine-data sections ───────────────────────
 def _md_panels(bridge):
     return [m for m in bridge.ws.json_sent if m["type"] == "panel" and m["panel"] == "machine_data"]
 
 
-async def test_machine_data_views_stack_within_one_turn(bridge):
-    # ONE spoken turn asking for several views: successive show_machine_data calls must
-    # ACCUMULATE — the last emitted panel payload carries BOTH sections in call order.
-    bridge._turn_nonce = 1
+async def test_machine_data_views_stack(bridge):
+    # successive machine-data views ACCUMULATE; every payload carries the FULL section list.
     await bridge._apply_tool("show_machine_data", {"data_type": "specs"})
     await bridge._apply_tool("show_machine_data", {"data_type": "faults"})
-    last = _md_panels(bridge)[-1]["data"]
-    views = [s["view"] for s in last.get("sections", [])]
-    assert views == ["specs", "faults"]
+    assert [s["view"] for s in _md_panels(bridge)[-1]["data"]["sections"]] == ["specs", "faults"]
 
 
-async def test_machine_data_single_view_payload_unchanged(bridge):
-    # One view in a turn -> payload byte-compatible with today (no sections key at all).
-    bridge._turn_nonce = 1
-    await bridge._apply_tool("show_machine_data", {"data_type": "specs"})
-    data = _md_panels(bridge)[-1]["data"]
-    assert "sections" not in data and data["view"] == "specs"
-
-
-async def test_machine_data_new_turn_resets_to_single_view(bridge):
-    # The first call of a NEW user turn (nonce advanced, as SpeechStarted does) resets the stack.
-    bridge._turn_nonce = 1
-    await bridge._apply_tool("show_machine_data", {"data_type": "specs"})
-    await bridge._apply_tool("show_machine_data", {"data_type": "faults"})
-    bridge._turn_nonce += 1  # new utterance — same increment the SpeechStarted handler performs
-    await bridge._apply_tool("show_machine_data", {"data_type": "telemetry"})
-    data = _md_panels(bridge)[-1]["data"]
-    assert "sections" not in data and data["view"] == "telemetry"
-
-
-async def test_machine_data_hide_clears_accumulator(bridge):
-    # Hiding the panel mid-turn clears the stack: the next view starts single, no stale sections.
-    bridge._turn_nonce = 1
-    await bridge._apply_tool("show_machine_data", {"data_type": "specs"})
-    await bridge._apply_tool("hide_panel", {"panel": "machine data"})
-    await bridge._apply_tool("show_machine_data", {"data_type": "faults"})
-    data = _md_panels(bridge)[-1]["data"]
-    assert "sections" not in data and data["view"] == "faults"
-
-
-async def test_lookup_part_and_torque_stack_within_one_turn(bridge):
-    # The gap: lookup_part + lookup_torque ALSO emit machine-data panels; within one turn both
-    # views must stack instead of the torque overwriting the part.
-    bridge._turn_nonce = 1
+async def test_machine_data_lookup_part_and_torque_stack(bridge):
     await bridge._apply_tool("lookup_part", {"query": "drawbar"})
     await bridge._apply_tool("lookup_torque", {"fastener_id": "tool_holder_bolt"})
-    last = _md_panels(bridge)[-1]["data"]
-    assert [s["view"] for s in last.get("sections", [])] == ["part", "torque"]
+    assert [s["view"] for s in _md_panels(bridge)[-1]["data"]["sections"]] == ["part", "torque"]
 
 
-async def test_show_machine_data_and_lookup_stack(bridge):
-    # Mixed sources stack too (a native show_machine_data view + a lookup view).
-    bridge._turn_nonce = 1
+async def test_machine_data_mixed_sources_stack(bridge):
     await bridge._apply_tool("show_machine_data", {"data_type": "faults"})
     await bridge._apply_tool("lookup_torque", {"fastener_id": "tool_holder_bolt"})
-    last = _md_panels(bridge)[-1]["data"]
-    assert [s["view"] for s in last.get("sections", [])] == ["faults", "torque"]
+    assert [s["view"] for s in _md_panels(bridge)[-1]["data"]["sections"]] == ["faults", "torque"]
 
 
-async def test_same_view_different_items_stack(bridge):
-    # Two DIFFERENT parts in one turn -> two sections (keyed by view + item id, not just view,
-    # so the second part does NOT overwrite the first).
-    bridge._turn_nonce = 1
+async def test_machine_data_same_view_different_items_stack(bridge):
+    # keyed by view + item id -> a second, DIFFERENT part does not overwrite the first
     await bridge._apply_tool("lookup_part", {"query": "drawbar"})
     await bridge._apply_tool("lookup_part", {"query": "coolant union"})
-    secs = _md_panels(bridge)[-1]["data"]["sections"]
-    assert [s["part"]["id"] for s in secs] == ["drawbar", "coolant_union"]
-    # re-asking the SAME part is deduped at the gateway (default name+args key) -> no fresh panel,
-    # no duplicate section: the stack stays exactly the two distinct parts.
-    await bridge._apply_tool("lookup_part", {"query": "drawbar"})
-    secs = _md_panels(bridge)[-1]["data"]["sections"]
-    assert [s["part"]["id"] for s in secs] == ["drawbar", "coolant_union"]
+    assert [s["part"]["id"] for s in _md_panels(bridge)[-1]["data"]["sections"]] == ["drawbar", "coolant_union"]
 
 
-async def test_lookup_new_turn_resets_and_hide_clears(bridge):
-    # The generalized (message-gated) accumulator keeps the turn-reset and hide-reset invariants.
+async def test_machine_data_sections_persist_across_turns(bridge):
+    # No more turn-nonce wipes: sections survive a new user utterance until explicitly removed.
     bridge._turn_nonce = 1
-    await bridge._apply_tool("lookup_part", {"query": "drawbar"})
-    await bridge._apply_tool("lookup_torque", {"fastener_id": "tool_holder_bolt"})
-    bridge._turn_nonce += 1  # new utterance -> single view again
-    await bridge._apply_tool("lookup_part", {"query": "coolant union"})
-    data = _md_panels(bridge)[-1]["data"]
-    assert "sections" not in data and data["view"] == "part"
-    await bridge._apply_tool("show_machine_data", {"data_type": "faults"})  # distinct view, same turn -> stacks
-    assert [s["view"] for s in _md_panels(bridge)[-1]["data"]["sections"]] == ["part", "faults"]
-    await bridge._apply_tool("hide_panel", {"panel": "all"})  # clears the accumulator
-    await bridge._apply_tool("show_machine_data", {"data_type": "specs"})  # distinct, single after clear
-    data = _md_panels(bridge)[-1]["data"]
-    assert "sections" not in data and data["view"] == "specs"
+    await bridge._apply_tool("show_machine_data", {"data_type": "specs"})
+    bridge._turn_nonce += 1  # a new utterance (as the SpeechStarted handler advances it)
+    await bridge._apply_tool("show_machine_data", {"data_type": "faults"})
+    assert [s["view"] for s in _md_panels(bridge)[-1]["data"]["sections"]] == ["specs", "faults"]
+    assert [s["view"] for s in bridge.orch.state.sections("machine_data")] == ["specs", "faults"]
+
+
+async def test_machine_data_hide_one_section_keeps_the_rest(bridge):
+    await bridge._apply_tool("show_machine_data", {"data_type": "specs"})
+    await bridge._apply_tool("show_machine_data", {"data_type": "faults"})
+    r = await bridge._apply_tool("hide_panel", {"panel": "machine_data", "section": "specs"})
+    assert r.model_output["removed_section"] == "specs"
+    assert [s["view"] for s in _md_panels(bridge)[-1]["data"]["sections"]] == ["faults"]
+    assert "machine_data" in bridge.orch.state.visible_panels  # panel stays up
+
+
+async def test_machine_data_hide_last_section_hides_panel(bridge):
+    await bridge._apply_tool("show_machine_data", {"data_type": "specs"})
+    await bridge._apply_tool("hide_panel", {"panel": "machine_data", "section": "specs"})
+    assert "machine_data" not in bridge.orch.state.visible_panels
+    assert bridge.orch.state.sections("machine_data") == []
+
+
+async def test_machine_data_hide_panel_clears_all_sections(bridge):
+    await bridge._apply_tool("show_machine_data", {"data_type": "specs"})
+    await bridge._apply_tool("show_machine_data", {"data_type": "faults"})
+    await bridge._apply_tool("hide_panel", {"panel": "machine_data"})  # whole panel
+    assert bridge.orch.state.sections("machine_data") == []
+    await bridge._apply_tool("show_machine_data", {"data_type": "telemetry"})  # fresh single-section stack
+    assert [s["view"] for s in _md_panels(bridge)[-1]["data"]["sections"]] == ["telemetry"]
+
+
+async def test_hide_all_and_set_panels_clear_machine_data_sections(bridge):
+    await bridge._apply_tool("show_machine_data", {"data_type": "specs"})
+    await bridge._apply_tool("hide_panel", {"panel": "all"})
+    assert bridge.orch.state.sections("machine_data") == []
+    await bridge._apply_tool("show_machine_data", {"data_type": "faults"})
+    await bridge._apply_tool("set_panels", {"panels": ["schematic"]})  # machine_data left the keep-set
+    assert bridge.orch.state.sections("machine_data") == []
+
+
+async def test_hide_unknown_section_is_rejected(bridge):
+    await bridge._apply_tool("show_machine_data", {"data_type": "specs"})
+    r = await bridge._apply_tool("hide_panel", {"panel": "machine_data", "section": "flux capacitor"})
+    assert r.model_output.get("error") == "rejected"
+    assert [s["view"] for s in bridge.orch.state.sections("machine_data")] == ["specs"]  # untouched
+
+
+async def test_resync_rebuilds_machine_data_sections(bridge):
+    # A fresh per-connection state has no sections; resync rebuilds them from the client's
+    # re-asserted list (fixes the post-reconnect SPECS-only artifact).
+    bridge._apply_resync({"visible": ["machine_data"], "machine_data": {"sections": [
+        {"view": "specs", "spindle": "x"},
+        {"view": "torque", "torque": {"id": "tool_holder_bolt", "torque_nm": 12}},
+    ]}})
+    assert [s["view"] for s in bridge.orch.state.sections("machine_data")] == ["specs", "torque"]
+    assert "machine_data" in bridge.orch.state.visible_panels
+
+
+def test_build_ui_state_enumerates_machine_data_sections():
+    # The model is the sole driver now, so SCREEN STATE must name every visible section.
+    from app.ws.gateway import build_ui_state
+    from app.agents.session_state import SessionState
+
+    s = SessionState()
+    s.visible_panels.add("machine_data")
+    s.stack_section("machine_data", "specs", {})
+    s.stack_section("machine_data", "faults", {})
+    s.stack_section("machine_data", "torque", {"torque": {"id": "tool_holder_bolt"}}, key="torque:tool_holder_bolt")
+    assert "machine-data panel (specs, faults, torque: tool_holder_bolt)" in build_ui_state(s)
 
 
 async def test_tool_event_reports_real_status(bridge):

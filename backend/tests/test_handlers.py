@@ -252,6 +252,30 @@ def test_set_panels_shows_exactly_the_named_set(state):
     assert r.control["action"] == "set_panels"
 
 
+def test_panel_sections_state_machine():
+    from app.agents.session_state import SessionState
+    s = SessionState()
+    assert s.stack_section("machine_data", "specs", {"a": 1}) == [{"view": "specs", "a": 1}]
+    s.stack_section("machine_data", "faults", {"b": 2})
+    assert [x["view"] for x in s.sections("machine_data")] == ["specs", "faults"]
+    # refresh moves the section last and updates its data
+    s.stack_section("machine_data", "specs", {"a": 9})
+    assert [x["view"] for x in s.sections("machine_data")] == ["faults", "specs"]
+    assert s.sections("machine_data")[-1]["a"] == 9
+    # keyed items of one view coexist (two parts)
+    s.stack_section("machine_data", "part", {"part": {"id": "drawbar"}}, key="part:drawbar")
+    s.stack_section("machine_data", "part", {"part": {"id": "coolant_union"}}, key="part:coolant_union")
+    assert sum(1 for x in s.sections("machine_data") if x["view"] == "part") == 2
+    # drop by view removes all matching; returns False while other sections remain
+    assert s.drop_sections("machine_data", "part") is False
+    assert all(x["view"] != "part" for x in s.sections("machine_data"))
+    # dropping the final section reports the panel is now empty
+    s.clear_sections("machine_data")
+    s.stack_section("machine_data", "specs", {})
+    assert s.drop_sections("machine_data", "specs") is True
+    assert s.sections("machine_data") == []
+
+
 def test_clear_highlight_also_clears_schematic_focus(state):
     # highlight a detailed-schematic part -> focus set + a jump-navigate emitted
     hi = run(state, "highlight_component", {"name": "drawbar"})

@@ -21,7 +21,7 @@ from typing import Any, Callable
 
 from app.agents.session_state import SessionState
 from app.data.catalog import catalog
-from app.grounding.whitelists import resolve_panel
+from app.grounding.whitelists import resolve_md_section, resolve_panel
 
 
 @dataclass
@@ -63,9 +63,10 @@ def show_machine_data(state: SessionState, args: dict) -> ToolResult:
     else:
         data, spoken = {}, {}
 
+    sections = state.stack_section("machine_data", view, data)
     return ToolResult(
         output={"asset_id": asset_id, "view": view, **spoken},
-        panel={"panel": "machine_data", "data": {"asset_id": asset_id, "view": view, **data}},
+        panel={"panel": "machine_data", "data": {"asset_id": asset_id, "view": view, **data, "sections": sections}},
     )
 
 
@@ -131,9 +132,11 @@ def lookup_part(state: SessionState, args: dict) -> ToolResult:
         "spec": part.get("spec"),
         "assembly": part.get("assembly"),
     }
+    sec = {"part": {"id": key, **part}}
+    sections = state.stack_section("machine_data", "part", sec, key=f"part:{key}")
     return ToolResult(
         output=facts,
-        panel={"panel": "machine_data", "data": {"view": "part", "part": {"id": key, **part}}},
+        panel={"panel": "machine_data", "data": {"view": "part", **sec, "sections": sections}},
     )
 
 
@@ -146,9 +149,11 @@ def lookup_torque(state: SessionState, args: dict) -> ToolResult:
         "size": f.get("size"),
         "lubrication": f.get("lubrication"),
     }
+    sec = {"torque": {"id": key, **f}}
+    sections = state.stack_section("machine_data", "torque", sec, key=f"torque:{key}")
     return ToolResult(
         output=facts,
-        panel={"panel": "machine_data", "data": {"view": "torque", "torque": {"id": key, **f}}},
+        panel={"panel": "machine_data", "data": {"view": "torque", **sec, "sections": sections}},
     )
 
 
@@ -474,6 +479,8 @@ def set_panels(state: SessionState, args: dict) -> ToolResult:
         if r and r != "all" and r not in resolved:
             resolved.append(r)
     state.visible_panels = set(resolved)
+    if "machine_data" not in resolved:
+        state.clear_sections("machine_data")  # machine-data left the keep-set -> drop its sections
     return ToolResult(output={"shown": resolved}, control={"action": "set_panels", "panels": resolved})
 
 
@@ -488,13 +495,29 @@ def hide_panel(state: SessionState, args: dict) -> ToolResult:
         # Genuinely unknown panel name — don't claim to hide something that doesn't exist.
         return ToolResult(output={"ok": False, "unknown_panel": str(args.get("panel", "")),
                                   "message": "I'm not sure which panel you mean — say it again?"})
+    # Per-section hide: "hide the specs" removes ONE machine-data section; removing the last one
+    # hides the panel; otherwise the panel stays up with the reduced section list re-rendered.
+    if panel == "machine_data" and args.get("section"):
+        view = resolve_md_section(args["section"])
+        emptied = state.drop_sections("machine_data", view)
+        if emptied:
+            state.visible_panels.discard("machine_data")
+            return ToolResult(output={"hidden": "machine_data", "removed_section": view},
+                              control={"action": "hide_panel", "panel": "machine_data"})
+        secs = state.sections("machine_data")
+        last = secs[-1]
+        return ToolResult(output={"removed_section": view, "remaining": [s["view"] for s in secs]},
+                          panel={"panel": "machine_data", "data": {**last, "sections": secs}})
     if panel == "all":
         state.visible_panels.clear()
+        state.panel_sections.clear()
         state.active_schematic = state.schematic_focus = state.active_highlight = None
         return ToolResult(output={"hidden": "all"}, control={"action": "hide_panel", "panel": "all"})
     already_hidden = panel not in state.visible_panels
     state.visible_panels.discard(panel)  # idempotent: a no-op if it was already hidden
-    if panel == "schematic":
+    if panel == "machine_data":
+        state.clear_sections("machine_data")  # whole-panel hide drops all its sections
+    elif panel == "schematic":
         state.active_schematic = state.schematic_focus = None
     elif panel == "overview":
         state.active_highlight = None
