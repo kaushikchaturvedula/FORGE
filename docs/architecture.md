@@ -32,7 +32,7 @@ flowchart TB
 
   subgraph BACKEND["FastAPI backend — Alibaba Cloud ECS (Docker image from ACR)"]
     GW["WS gateway — dual async pumps<br/>4 s tool-call dedup · session resumption"]:::back
-    INTENT["Deterministic intent layer<br/>transcript → tools, no added LLM latency"]:::back
+    INTENT["Transcript signals — machine-switch detect<br/>dims header · clears stale hero data"]:::back
     ORCH["Orchestrator + TOOL_AGENT map<br/>per-tool routing to 10 specialist roles → HUD chips"]:::back
     GROUND["Grounding gate — argument whitelists<br/>tool-only facts → spoken 'not on file' rejection"]:::back
     AUTO["Autopilot — server-sequenced diagnosis workflow<br/>LOTO checklist state machine, human-confirm gates<br/>proactive AI4I threshold alerts"]:::back
@@ -53,8 +53,8 @@ flowchart TB
   TECH -->|"voice + camera"| CONSOLE
   CONSOLE <-->|"WebSocket /ws — PCM audio · JPEG frames · panel/control JSON"| GW
   GW -->|"final transcript"| INTENT
-  INTENT -->|"inferred tool calls"| ORCH
-  GW -->|"native function calls"| ORCH
+  INTENT -->|"machine-switch signal"| ORCH
+  GW -->|"native function calls — sole tool/UI driver"| ORCH
   GW ---|"advances at safe points"| AUTO
   ORCH --> GROUND
   GROUND -->|"validated handlers read"| CAT
@@ -70,7 +70,7 @@ flowchart TB
 |---|---|
 | Field Console (HUD, panels, audio, vision gate) | [`frontend/src/App.tsx`](../frontend/src/App.tsx), [`hooks/useRealtimeSocket.ts`](../frontend/src/hooks/useRealtimeSocket.ts), [`audio/`](../frontend/src/audio/) |
 | WS gateway (pumps, dedup, resumption, TOOL_AGENT) | [`backend/app/ws/gateway.py`](../backend/app/ws/gateway.py) |
-| Deterministic intent layer | [`backend/app/agents/intent.py`](../backend/app/agents/intent.py) |
+| Transcript signals (machine-switch detection) | [`backend/app/agents/intent.py`](../backend/app/agents/intent.py) |
 | Orchestrator (grounded tool executor) + specialist registry | [`backend/app/agents/orchestrator.py`](../backend/app/agents/orchestrator.py), [`specialists.py`](../backend/app/agents/specialists.py) |
 | Grounding gate | [`backend/app/grounding/whitelists.py`](../backend/app/grounding/whitelists.py), [`callbacks.py`](../backend/app/grounding/callbacks.py) |
 | Diagnosis workflow · LOTO state machine · alerts | [`backend/app/agents/workflows.py`](../backend/app/agents/workflows.py), [`tools/handlers.py`](../backend/app/agents/tools/handlers.py) |
@@ -95,6 +95,17 @@ dropped tool calls mid-swap, simpler session resumption — and still sidesteps 
 agent needs a realtime model" failure mode entirely.
 See [`backend/app/agents/orchestrator.py`](../backend/app/agents/orchestrator.py) and
 [`specialists.py`](../backend/app/agents/specialists.py).
+
+**Native-first tool routing.** The realtime model's own function calls are the sole
+driver of tools and UI. An earlier build ran a deterministic transcript→tool inference
+layer alongside the model's calls; it was removed because it double-fired tools, fought
+the model on compound commands, and drifted from the persona's few-shots. The model now
+decides *what* to call (reliability is engineered in the persona's multi-task examples in
+[`voice.py`](../backend/app/agents/voice.py)), and the server owns *what's true* —
+grounding validation, panel/section state, and dedup. The one surviving transcript check
+is machine-switch detection ([`intent.py`](../backend/app/agents/intent.py)): on "I'm on a
+different machine now" the gateway dims the header and clears stale hero data — a UX beat
+the model shouldn't have to infer.
 
 **Grounding is structural, not prompted-hope.** Every fact-bearing answer must come
 from a tool call, and every tool argument is validated against the catalog before the

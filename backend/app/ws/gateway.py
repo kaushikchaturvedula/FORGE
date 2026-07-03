@@ -347,8 +347,9 @@ class RealtimeBridge:
                 )
                 return False
             # Native-first: advertise the action/display tools so the model can drive the
-            # console itself (closed loop). If the endpoint ignores tools, the intent layer
-            # is the deduped safety net. The session.updated echo (logged) reveals support.
+            # console itself (closed loop). The model's native function calls are the SOLE
+            # tool/UI driver — there is no deterministic fallback if the endpoint ignores
+            # tools. The session.updated echo (logged) reveals whether they were accepted.
             from app.agents.tools import schemas
             from app.agents.voice import realtime_instructions
 
