@@ -252,6 +252,28 @@ def test_set_panels_shows_exactly_the_named_set(state):
     assert r.control["action"] == "set_panels"
 
 
+def test_clear_highlight_also_clears_schematic_focus(state):
+    # highlight a detailed-schematic part -> focus set + a jump-navigate emitted
+    hi = run(state, "highlight_component", {"name": "drawbar"})
+    assert state.schematic_focus and hi.panel["data"]["navigate"]["target"]
+    # clear -> focus state cleared AND a schematic panel re-emitted with navigate cleared so the
+    # badge/ring disappear (overview clear_highlight control still present)
+    cl = run(state, "clear_highlight", {})
+    assert state.schematic_focus is None
+    assert cl.output["highlight"] == "cleared"
+    assert cl.panel == {"panel": "schematic", "data": {"navigate": None}}
+    assert cl.control == {"action": "clear_highlight"}
+    # re-highlight still works after a clear
+    hi2 = run(state, "highlight_component", {"name": "drawbar"})
+    assert state.schematic_focus and hi2.panel["data"]["navigate"]["target"]
+
+
+def test_clear_highlight_with_no_schematic_is_graceful(state):
+    r = run(state, "clear_highlight", {})            # nothing open
+    assert r.panel is None                            # no schematic panel to rewrite
+    assert r.control == {"action": "clear_highlight"} and state.schematic_focus is None
+
+
 # ── schematic navigation ─────────────────────────────────────────────────────
 def test_navigate_jump_to_drawbar_returns_geometry(state):
     run(state, "show_schematic", {"diagram_type": "spindle"})

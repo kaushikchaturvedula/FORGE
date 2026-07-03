@@ -194,9 +194,12 @@ class Catalog:
         if norm in index:
             key = index[norm]
             return key, entries[key]
-        # substring fallback: spoken queries often add/drop words
+        # Fallback: spoken queries add/drop words. Match the alias on WORD BOUNDARIES (like
+        # resolve_hotspot) so a short alias ("ppe", "loto") can't fire from inside a longer word
+        # ("dro-ppe-r", "sw-appe-d"). The norm-in-phrase direction (query is a fragment of a
+        # multi-word alias) stays a plain containment.
         for phrase, key in index.items():
-            if phrase and (phrase in norm or norm in phrase):
+            if phrase and (re.search(rf"\b{re.escape(phrase)}\b", norm) or norm in phrase):
                 return key, entries[key]
         return None
 

@@ -21,6 +21,12 @@ def _has(text: str, *words: str) -> bool:
     return any(w in text for w in words)
 
 
+def _has_word(text: str, *phrases: str) -> bool:
+    """Like _has but WORD-BOUNDARY aware — so a short trigger ("ppe", "loto") can't fire from
+    inside a longer word ("dro-ppe-r", "sw-appe-d"). Used for the safety trigger only."""
+    return any(re.search(rf"\b{re.escape(p)}\b", text) for p in phrases)
+
+
 _SWITCH_PHRASES = ("different machine", "another machine", "new machine", "other machine",
                    "switched machine", "switch machines", "this is a different", "not the same machine",
                    "switched to a", "now on a different")
@@ -151,8 +157,8 @@ def infer_tools(transcript: str, ctx: dict | None = None) -> list[tuple[str, dic
         pr = catalog.resolve_procedure(t)
         if pr:
             calls.append(("start_procedure", {"procedure_id": pr[0]}))
-    if _has(t, "lockout", "loto", "lock out", "ppe", "pre-start", "prestart", "pre start",
-            "safety check", "is it safe", "tag out"):
+    if _has_word(t, "lockout", "loto", "lock out", "ppe", "pre-start", "prestart", "pre start",
+                 "safety check", "is it safe", "tag out"):
         ck = catalog.resolve_check(t)
         if ck:
             calls.append(("run_safety_check", {"check_type": ck[0]}))

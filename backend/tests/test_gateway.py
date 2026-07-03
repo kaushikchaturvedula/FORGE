@@ -328,6 +328,21 @@ async def test_highlight_detailed_part_uses_the_schematic(bridge):
     assert panel["data"]["navigate"]["target"] == "drawbar"
 
 
+async def test_clear_highlight_clears_schematic_focus_end_to_end(bridge):
+    # Live bug: clear_highlight cleared only the overview pulse; the detailed-schematic focus
+    # badge/ring (and SCREEN STATE "focused on …") lingered while FORGE said "cleared".
+    from app.ws.gateway import build_ui_state
+    await bridge._apply_tool("highlight_component", {"name": "drawbar"})
+    assert "focused on" in build_ui_state(bridge.orch.state)
+    bridge.ws.json_sent.clear()
+    await bridge._apply_tool("clear_highlight", {})
+    # SCREEN STATE no longer claims a focus
+    assert "focused on" not in build_ui_state(bridge.orch.state)
+    # a schematic panel was re-emitted with navigate cleared -> frontend badge/ring drop
+    sch = [m for m in bridge.ws.json_sent if m["type"] == "panel" and m["panel"] == "schematic"]
+    assert sch and sch[-1]["data"]["navigate"] is None
+
+
 async def test_highlight_whole_machine_part_uses_overview(bridge):
     # The control box isn't in any detailed diagram -> overview map.
     await bridge._apply_tool("highlight_component", {"name": "control box"})

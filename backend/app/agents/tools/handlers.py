@@ -618,8 +618,19 @@ def highlight_component(state: SessionState, args: dict) -> ToolResult:
 
 
 def clear_highlight(state: SessionState, args: dict) -> ToolResult:
+    # Clear BOTH highlight surfaces so FORGE's "cleared" is true: the overview-map pulse (via the
+    # clear_highlight control) AND the detailed-schematic focus badge/ring. The schematic badge/
+    # ring derive from the panel's `navigate` field, and schematic panels shallow-merge on the
+    # frontend, so a partial {navigate: None} clears them with no frontend change.
+    had_focus = state.schematic_focus is not None
     state.active_highlight = None
-    return ToolResult(output={"highlight": "cleared"}, control={"action": "clear_highlight"})
+    state.schematic_focus = None
+    panel = {"panel": "schematic", "data": {"navigate": None}} if state.active_schematic else None
+    return ToolResult(
+        output={"highlight": "cleared", "focus_cleared": had_focus},
+        panel=panel,
+        control={"action": "clear_highlight"},
+    )
 
 
 def dismiss_alert(state: SessionState, args: dict) -> ToolResult:

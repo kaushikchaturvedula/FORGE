@@ -40,6 +40,19 @@ def test_procedure_and_safety():
     assert ("run_safety_check", {"check_type": "loto"}) in infer_tools("run the lockout procedure")
 
 
+def test_short_safety_triggers_are_word_boundary_not_substring():
+    def sc(s):
+        return [c for c in infer_tools(s, {}) if c[0] == "run_safety_check"]
+    # ASR false positives: "ppe" embedded in "dropper"/"swapped" must NOT pop a safety checklist.
+    assert sc("what's the part number for the dropper, and the torque spec for the tool holder bolt?") == []
+    assert sc("i swapped the tool holder") == []
+    # real safety asks still fire
+    assert ("run_safety_check", {"check_type": "pre_start"}) in infer_tools("run the pre-start safety check", {})
+    assert ("run_safety_check", {"check_type": "ppe"}) in infer_tools("is my ppe okay", {})
+    assert ("run_safety_check", {"check_type": "ppe"}) in infer_tools("run the ppe check", {})
+    assert ("run_safety_check", {"check_type": "loto"}) in infer_tools("run the lockout procedure", {})
+
+
 def test_chitchat_and_other_equipment_infer_nothing():
     assert infer_tools("hello, how are you") == []
     assert infer_tools("can you help me with a forklift") == []

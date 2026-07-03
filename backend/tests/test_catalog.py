@@ -30,6 +30,17 @@ def test_resolve_procedure_and_check_and_diagram():
     assert catalog.resolve_diagram("spindle assembly")[0] == "spindle"
 
 
+def test_resolve_matches_on_word_boundaries_not_substrings():
+    # A short alias ("ppe") must NOT fire from inside a longer word ("dro-ppe-r", "sw-appe-d") —
+    # this is the ASR-false-positive class that popped the PPE checklist uninvited.
+    assert catalog.resolve_check("what's the part number for the dropper") is None
+    assert catalog.resolve_check("i swapped the tool holder") is None
+    # real standalone aliases still resolve (whole word, and the norm-in-phrase direction)
+    assert catalog.resolve_check("is my ppe okay")[0] == "ppe"
+    assert catalog.resolve_check("run the loto check")[0] == "loto"
+    assert catalog.resolve_check("pre-start")[0] == "pre_start"
+
+
 def test_resolve_component_across_and_within_diagram():
     assert catalog.resolve_component("spindle", "draw bar")[0] == "drawbar"
     # target resolvable even without naming the diagram
