@@ -83,7 +83,7 @@ open fault F-2218 to follow up.*
 
 ### 2:40–3:00 · Close
 > **Narrator:** "Every step — brief, safety, vision, schematic, spec, measurement,
-> report — ran through a nine-agent brain on one Qwen-Omni-Realtime session, grounded so
+> report — ran through per-tool specialist routing on one Qwen-Omni-Realtime session, grounded so
 > it can't invent a number, running on Alibaba Cloud."
 
 *Pan the HUD: the **agent routing log** (chips lit across the session), **tool-call

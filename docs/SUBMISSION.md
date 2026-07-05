@@ -13,9 +13,9 @@ PL45LM-class machine). A technician with both hands occupied simply talks; FORGE
 Alibaba Cloud.
 
 It runs as **one `qwen-omni-realtime` bidirectional session** doing audio in/out +
-function calling + live image streaming at once, with a server-side **9-agent**
-hierarchy and a **grounding layer** that makes a hallucinated part number, torque
-value, or safety step impossible.
+function calling + live image streaming at once, with server-side **per-tool specialist
+attribution** (ten roles via the `TOOL_AGENT` map) and a **grounding layer** that makes a
+hallucinated part number, torque value, or safety step impossible.
 
 ## What it does (functionality)
 
@@ -47,7 +47,7 @@ value, or safety step impossible.
 - **Real bidirectional protocol** isolated in [`realtime/events.py`](../backend/app/realtime/events.py)
   / [`session.py`](../backend/app/realtime/session.py): tools in `session.update`,
   `response.function_call_arguments.done`, `input_image_buffer.append`, `function_call_output`.
-- **178 hermetic tests** (no API key) + a zero-error TypeScript build; CI runs both.
+- **191 hermetic tests** (no API key) + a zero-error TypeScript build; CI runs both.
 
 ### Innovation & AI Creativity — 30%
 - **Multimodal field service is a genuinely new application** of a realtime omni model:
@@ -60,7 +60,7 @@ value, or safety step impossible.
 - **Human-in-the-loop safety**: the Safety Agent will not advance a LOTO step without
   the technician's spoken confirmation — a hard checkpoint at a critical decision point.
 - **Two Qwen models cooperating — a System-1 / System-2 split**: a realtime front agent
-  (`qwen3.5-omni-plus-realtime`) handles sub-second voice + vision + tools, while a separate
+  (`qwen-omni-realtime`) handles sub-second voice + vision + tools, while a separate
   `qwen-plus` agent reasons about root cause **asynchronously off the realtime loop** (HTTPS
   chat-completions) and hands a structured verdict (root cause · confidence · recommended action ·
   evidence) back as a grounded machine-data `diagnosis` section
