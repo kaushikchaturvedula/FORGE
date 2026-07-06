@@ -1,6 +1,6 @@
 # FORGE — Submission
 
-**Track 4: Autopilot Agent** (primary) · **Track 3: Agent Society** (secondary).
+**Track 4: Autopilot Agent.**
 Global AI Hackathon with Qwen Cloud.
 
 Demo video: https://youtu.be/0rjQulthDdo · Repository: https://github.com/kaushikchaturvedula/FORGE
@@ -91,8 +91,6 @@ hallucinated part number, torque value, or safety step impossible.
   (vision + telemetry), plans (routing across specialists), acts (console + procedures),
   and includes **human-in-the-loop checkpoints** (LOTO verbal confirmation, destructive-
   action confirmation).
-- **Track 3 (Agent Society):** a registry of ten specialist roles with clean per-tool
-  routing (the `TOOL_AGENT` map) and a shared session state / work order.
 
 ## Requirement checklist
 
@@ -102,8 +100,8 @@ hallucinated part number, torque value, or safety step impossible.
       `/cloud/health`) and [`ALIBABA_CLOUD_PROOF.md`](../deploy/ALIBABA_CLOUD_PROOF.md).
 - [x] Public open-source repo with **Apache 2.0** `LICENSE`.
 - [x] Architecture diagram (Mermaid + SVG) — [`architecture.md`](architecture.md).
-- [x] ~3-min demo script — [`DEMO_SCRIPT.md`](DEMO_SCRIPT.md).
+- [x] Demo script — [`DEMO_SCRIPT.md`](DEMO_SCRIPT.md).
 - [x] Text description + criteria map — this file.
-- [x] Track identified — Track 4 (+ Track 3).
+- [x] Track identified — Track 4.
 - [x] Data attribution — [`DATA_SOURCES.md`](../DATA_SOURCES.md).
 - [x] Blog scaffold — [`BLOG.md`](BLOG.md).
