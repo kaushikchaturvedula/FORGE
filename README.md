@@ -3,7 +3,7 @@
 # 🔧 FORGE
 ### Field Operations Real-time Guidance Engine
 
-**A voice-activated, multimodal AI co-pilot for industrial field-service technicians — built entirely on Qwen-Omni-Realtime on Alibaba Cloud.**
+**A voice-activated, multimodal AI co-pilot for industrial field-service technicians — built on Qwen-Omni-Realtime + a qwen-plus diagnosis agent, on Alibaba Cloud.**
 
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![Model](https://img.shields.io/badge/AI-Qwen--Omni--Realtime-7C3AED.svg)](https://www.alibabacloud.com/help/en/model-studio/realtime)
@@ -43,7 +43,7 @@ audio out, function calling, and live image streaming at once.
 
 Every layer — telemetry, schematics, parts, procedures, demo feed — is coherent to a
 single machine: a **CNC vertical machining center / turn-mill** (synthetic registry
-modeled on a Samsung PL45LM-class turn-mill).
+modeled on a commercial PL45LM-class turn-mill).
 
 ---
 
@@ -153,10 +153,12 @@ its license is listed in **[DATA_SOURCES.md](DATA_SOURCES.md)**.
 
 ## Hackathon
 
-Track 4 — **Autopilot Agent** (secondary: Track 3 — Agent Society). Submission write-up
-and judging-criteria mapping in **[docs/SUBMISSION.md](docs/SUBMISSION.md)**; 3-minute
-demo script in **[docs/DEMO_SCRIPT.md](docs/DEMO_SCRIPT.md)**; deployment proof in
+Track 4 — **Autopilot Agent**. Submission write-up
+and judging-criteria mapping in **[docs/SUBMISSION.md](docs/SUBMISSION.md)**; demo
+script in **[docs/DEMO_SCRIPT.md](docs/DEMO_SCRIPT.md)**; deployment proof in
 **[deploy/ALIBABA_CLOUD_PROOF.md](deploy/ALIBABA_CLOUD_PROOF.md)**.
+
+Demo video: https://youtu.be/0rjQulthDdo · Repository: https://github.com/kaushikchaturvedula/FORGE
 
 ## License
 

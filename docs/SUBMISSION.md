@@ -3,6 +3,8 @@
 **Track 4: Autopilot Agent** (primary) · **Track 3: Agent Society** (secondary).
 Global AI Hackathon with Qwen Cloud.
 
+Demo video: https://youtu.be/0rjQulthDdo · Repository: https://github.com/kaushikchaturvedula/FORGE
+
 ## What it is
 
 FORGE (Field Operations Real-time Guidance Engine) is a **voice-activated, multimodal

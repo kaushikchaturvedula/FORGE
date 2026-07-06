@@ -39,7 +39,7 @@ Operating video — "KAFO KA-24A CNC Vertical Machining Center - Year 2020" by C
 > The values in `parts.json` (part numbers, torque figures, clamp forces) and
 > `machines.json` (nameplate, specs, maintenance history) are **synthetic** —
 > plausible engineering figures authored for this demo on a registry modeled on a
-> **Samsung PL45LM-class turn-mill**. They are not OEM data.
+> **commercial PL45LM-class turn-mill**. They are not OEM data.
 
 ---
 
