@@ -5,7 +5,7 @@
 import type { ReactNode } from "react";
 
 // Repository URL is not in the repo (no git remote); set this when the project is published.
-const REPO_URL = "#";
+const REPO_URL = "https://github.com/kaushikchaturvedula/FORGE";
 const CONSOLE_HREF = "#console";
 const CLIP_URL = "https://www.youtube.com/watch?v=3L4-WhSYx9s"; // CNCBUL "KAFO KA-24A", CC BY 3.0
 const MODEL_URL = "https://sketchfab.com/3d-models/cnc-milling-machine-318e0c1f28fb4ac49c90e0bce947f786"; // ambivalentBear, CC BY 4.0
@@ -35,7 +35,7 @@ const PROBLEMS: [string, string][] = [
 
 const STEPS: [string, string][] = [
   ["1 · Speak", "The technician talks naturally; the field camera shows the machine. No menus, no typing."],
-  ["2 · One model", "Qwen3.5-Omni-Realtime listens, sees the feed, reasons, speaks back, and emits native function calls — a single realtime model, not a stitched STT → LLM → TTS stack."],
+  ["2 · One realtime model", "Qwen3.5-Omni-Realtime listens, sees the feed, reasons, speaks back, and emits native function calls — a single realtime model, not a stitched STT → LLM → TTS stack."],
   ["3 · Grounded tools", "Each function call runs a whitelisted, catalog-grounded tool that drives the console — panels, schematics, the 3D model, the work log. Specs and numbers come from the machine's data, never invented."],
   ["4 · Background diagnosis", "A separate Qwen-Plus text agent reasons over the grounded telemetry and open faults — off the realtime loop — to produce a structured diagnosis."],
 ];
@@ -198,7 +198,7 @@ export function Landing() {
           </div>
           <p className="mt-6 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
             <span className="font-semibold">Honest about the demo:</span> the “live field-vision” feed is a
-            recorded CNC clip (piped in via OBS Virtual Camera) standing in for a real field camera — the app
+            recorded CNC clip standing in for a real field camera — the app
             treats a clip and a camera identically. Clip: “KAFO KA-24A CNC Vertical Machining Center” by CNCBUL
             Perman Machinery, <a className="underline hover:text-amber-700" href={CLIP_URL} target="_blank" rel="noreferrer">YouTube</a>, CC BY 3.0.
           </p>
@@ -207,9 +207,9 @@ export function Landing() {
         {/* Agents & tools */}
         <Section id="agents" eyebrow="Agents & tools" title="One realtime session, ten specialist roles">
           <p className="-mt-4 max-w-3xl text-slate-600">
-            A single Qwen-Omni-Realtime session carries the whole conversation. An orchestrator routes
-            the technician to nine specialist roles by swapping the active instruction-and-tool bundle
-            mid-conversation — the multi-agent hierarchy without a second model.
+            A single Qwen-Omni-Realtime session carries the whole conversation. Every executed tool is
+            attributed to its owning specialist role — ten roles, surfaced live as routing chips in the
+            HUD — while a separate qwen-plus agent handles deep fault reasoning off the realtime loop.
           </p>
           <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {AGENTS.map(([name, role], i) => (
@@ -270,7 +270,7 @@ export function Landing() {
               <Mark />
               <p className="mt-3 max-w-sm text-sm text-slate-600">
                 A voice-activated, multimodal AI co-pilot for industrial field-service technicians —
-                built entirely on Qwen-Omni-Realtime on Alibaba Cloud.
+                built on Qwen-Omni-Realtime + a qwen-plus diagnosis agent, on Alibaba Cloud.
               </p>
             </div>
             <div className="grid grid-cols-2 gap-x-10 gap-y-2 text-sm">
