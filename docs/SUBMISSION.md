@@ -9,7 +9,7 @@ Demo video: https://youtu.be/0rjQulthDdo · Repository: https://github.com/kaush
 
 FORGE (Field Operations Real-time Guidance Engine) is a **voice-activated, multimodal
 AI co-pilot for industrial field-service technicians**. The hero asset is a CNC
-vertical machining center / turn-mill (a synthetic registry modeled on a Samsung
+vertical machining center / turn-mill (a synthetic registry modeled on a commercial
 PL45LM-class machine). A technician with both hands occupied simply talks; FORGE
 **listens, sees, acts, documents, and hands off** — entirely on Qwen, running on
 Alibaba Cloud.
