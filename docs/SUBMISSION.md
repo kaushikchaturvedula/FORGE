@@ -84,6 +84,7 @@ hallucinated part number, torque value, or safety step impossible.
   [demo script](DEMO_SCRIPT.md), a [build blog](BLOG.md), full data attribution
   ([DATA_SOURCES.md](../DATA_SOURCES.md)), and an Alibaba Cloud
   [deployment proof](../deploy/ALIBABA_CLOUD_PROOF.md).
+- **Deployment proof recording:** https://youtu.be/6qgV8-hwQhQ — ECS + OSS + DashScope live; instance released after evidence capture (see [deploy/ALIBABA_CLOUD_PROOF.md](../deploy/ALIBABA_CLOUD_PROOF.md)).
 
 ## Track relevance
 

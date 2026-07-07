@@ -49,34 +49,48 @@ modeled on a commercial PL45LM-class turn-mill).
 
 ## Architecture at a glance
 
-```
-Browser (React Field Console)
-  │  mic 16 kHz PCM · JPEG frames @1 fps (vision only) · control
-  ▼  WebSocket
-FastAPI Gateway  ──  dual async tasks (upstream / downstream)
-  │  dedup cache · FIRST_EXCEPTION teardown · session resumption · vision gating
-  ▼
-Orchestration  ──  ONE Qwen-Omni-Realtime session (full 25-tool catalog at session open)
-  │  10 specialist roles (orchestrator + 8 specialists + Field_Advisor)
-  │  per-tool routing: every executed tool lights its owning specialist's HUD chip (TOOL_AGENT)
-  │  async off-loop → qwen-plus diagnosis agent (HTTPS chat-completions) writes a "diagnosis" panel
-  ▼
-Grounding layer  ──  argument whitelists · tool-only facts · LOTO verbal gating
-  │
-Bundled CNC catalogs  ──  AI4I telemetry · parts · procedures · safety · SVG schematics
-  │
-Alibaba Cloud  ──  ECS (host) · OSS (assets via oss2) · ACR (image) · DashScope (model)
+```mermaid
+flowchart TB
+  BROWSER["Browser — React Field Console<br/>mic 16 kHz PCM · JPEG frames @1 fps vision-only · control JSON"]
+
+  subgraph ECS["Alibaba Cloud ECS — FastAPI backend · optional ACR container image"]
+    GW["WS Gateway<br/>dual async pumps · 4 s dedup · session resumption · vision gating"]
+    ORCH["Orchestrator + TOOL_AGENT map<br/>per-tool routing → specialist HUD chips"]
+    GROUND["Grounding layer<br/>argument whitelists · tool-only facts · LOTO verbal gating"]
+    CAT["Bundled CNC catalogs<br/>AI4I telemetry · parts · procedures · safety · SVG schematics"]
+  end
+
+  subgraph QWEN["Qwen Cloud — DashScope"]
+    RT["ONE Qwen-Omni-Realtime session<br/>full 25-tool catalog at session open<br/>audio + vision frames + function calls"]
+    QP["qwen-plus diagnosis agent<br/>async off-loop · deliberate root-cause reasoning"]
+  end
+
+  OSS["Alibaba Cloud OSS<br/>assets via oss2 · /cloud/health deployment proof"]
+
+  BROWSER <-->|"WebSocket /ws"| GW
+  GW --> ORCH
+  ORCH --> GROUND
+  GROUND --> CAT
+  GW <-->|"WSS realtime — audio · frames · tool calls"| RT
+  ORCH -. "async diagnosis — HTTPS chat-completions" .-> QP
+  QP -. "verdict → grounded diagnosis panel + spoken update" .-> GW
+  OSS -. "assets at startup via oss2" .-> CAT
 ```
 
 See [docs/architecture.md](docs/architecture.md) for the full diagram.
 
-> **Why one session, not nine?** AgentScope's realtime support is single-agent; a
-> true multi-agent realtime *transfer* is unproven and its DashScope wrapper may not
-> forward tool-calls. So FORGE ships **one** flat realtime session carrying all tools,
-> with per-tool specialist routing (the routing log and agent chips). A swap-based
-> "transfer" layer (`session.update` per handoff) was built and unit-tested during
-> development, but is not enabled at runtime — no swap latency, no risk of dropped
-> tool calls mid-swap, simpler session resumption.
+> **Why one realtime session plus one reasoning agent — not a mesh of sub-agents?** This
+> is a deliberate latency architecture — a System-1/System-2 split. FORGE keeps a single
+> flat Qwen-Omni-Realtime session carrying all 25 grounded tools, so the voice loop stays
+> sub-second: no runtime handoffs, no tool call dropped mid-transfer, one connection to
+> resume after a network blip — and the specialist HUD chips still give full per-tool
+> attribution without paying any swap cost. Deep failure analysis doesn't belong on that
+> hot path: it runs on a second agent (`qwen-plus`, async HTTPS chat-completions) that
+> reasons off the realtime loop and hands a structured verdict back into the session as a
+> grounded diagnosis panel plus a spoken update. A swap-based session-transfer layer was
+> prototyped and unit-tested during development and deliberately kept out of the runtime —
+> it would add handoff latency and mid-swap tool-call risk without adding any capability
+> the flat session + per-tool routing doesn't already deliver.
 
 ### Two agents, two Qwen models — a System-1/System-2 split
 
