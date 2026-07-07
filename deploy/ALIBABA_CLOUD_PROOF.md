@@ -63,7 +63,7 @@ realtime model is served from — proving both Alibaba Cloud services are in use
 *Voice round-trip — a spoken command drives a grounded tool call that populates the Machine Data panel.*
 
 ![ECS instance details](proof/09-ecs-instance-details.png)
-*ECS instance details — ecs.e-c1m2.large (2 vCPU / 4 GiB), Ubuntu, pay-as-you-go, created Jul 6, 2026.*
+*ECS instance details — ecs.e-c1m2.large (2 vCPU / 4 GiB), Ubuntu, pay-as-you-go*
 
 ## Code links (formal proof)
 
