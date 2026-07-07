@@ -18,7 +18,7 @@ Cloud (a realtime voice agent plus an async qwen-plus diagnosis agent), on Aliba
 
 ## Demo command script
 
-Full demo command script — the 4-minute video (https://youtu.be/0rjQulthDdo) shows a trimmed subset of these; every command below was exercised live against the ECS-deployed build (see deploy/ALIBABA_CLOUD_PROOF.md).
+Full demo command script — the 4-minute video (https://youtu.be/m1AlPu2-fqo) shows a trimmed subset of these; every command below was exercised live against the ECS-deployed build (see deploy/ALIBABA_CLOUD_PROOF.md).
 
 1. Hey FORGE, here's a live feed of the PL45 LM machine — walk me through what you're seeing.
 2. Brief me on this machine, show me its specs — and are there any open faults?
