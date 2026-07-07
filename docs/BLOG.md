@@ -1,5 +1,7 @@
 # Building FORGE: a voice co-pilot that sees the machine
 
+> Published version: https://medium.com/@kaushikchaturvedula/building-forge-a-voice-co-pilot-that-sees-the-machine-9a702b4c2147
+
 *Build-journey outline for the Blog Post Prize. Each section is a beat to expand with
 code snippets, screenshots, and the demo GIF.*
 
