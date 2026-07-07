@@ -45,6 +45,11 @@ Every layer — telemetry, schematics, parts, procedures, demo feed — is coher
 single machine: a **CNC vertical machining center / turn-mill** (synthetic registry
 modeled on a commercial PL45LM-class turn-mill).
 
+The engine itself isn't CNC-specific: the pattern — continuous voice + live vision +
+grounded tool-calling over a structured equipment catalog — carries to other field-service
+domains such as HVAC, elevators, turbines, and medical devices; the CNC turn-mill is the
+fully-built reference vertical.
+
 ---
 
 ## Architecture at a glance
@@ -158,6 +163,17 @@ cd frontend && npm run build    # zero TypeScript errors
 ```
 
 ---
+
+## Roadmap
+
+Directions beyond the current build — the CNC vertical is what ships today:
+
+- **Multi-asset catalogs** — grow from the single CNC registry to a library of machines.
+- **Live telemetry** — ingest real PLC / MTConnect / OPC-UA streams in place of the bundled AI4I dataset.
+- **Additional verticals** — HVAC, elevators, turbines, medical devices, each behind its own grounded catalog.
+- **RAG over OEM manuals** — answer from real manufacturer documentation with citations back to the page (today's specs are hand-authored into structured JSON).
+- **CMMS / ERP integration** — push the generated work order and shift handoff into maintenance systems.
+- **Edge buffering** — ride out low-connectivity shop floors without losing the session or work log.
 
 ## Data & attribution
 
