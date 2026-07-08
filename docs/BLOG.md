@@ -62,8 +62,9 @@ code snippets, screenshots, and the demo GIF.*
 - Barge-in → drain the 24 kHz playback queue the instant the server says speech started.
 
 ## 8. Seeing the machine without a machine
-- OBS Virtual Camera turns a CC-licensed CNC clip into a "webcam" — `getUserMedia` never
-  knows the difference. Zero code change to demo vision.
+- The console loads a CC-licensed CNC clip directly as its video-file vision source — no camera
+  or OBS required (a real webcam and an OBS Virtual Camera route are also supported). Zero code
+  change to demo vision.
 - Downscale to 320×240 JPEG at 1 fps; optional screen-share for SCADA dashboards.
 
 ## 9. Shipping it on Alibaba Cloud

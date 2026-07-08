@@ -160,8 +160,12 @@ npm install
 npm run dev                      # http://localhost:5173
 
 # 3. Live feed (the "camera")
-#    Load datasets/<clip>.mp4 into OBS Studio as a media source, loop it,
-#    and start OBS Virtual Camera. The browser sees it as a webcam device.
+#    In the Field Vision panel, toggle 👁 Vision, click the "🎞 Video file" button,
+#    then "Choose a CNC clip…" and pick datasets/cnc2.mp4 — the console streams it
+#    as the vision source (no camera or extra tooling needed). This is what the demo uses.
+#    (📷 Camera mode also works with a real webcam/phone cam; for a webcam-style route to
+#    the clip, load it in OBS Studio, start OBS Virtual Camera, switch to 📷 Camera, and
+#    select that device in the picker. 🖥 Share screen streams a SCADA/monitor view instead.)
 ```
 
 ### Hermetic tests (no API key needed)

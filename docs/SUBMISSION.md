@@ -23,7 +23,7 @@ hallucinated part number, torque value, or safety step impossible.
 
 - **Listens continuously** — server-VAD, sub-second responses, native barge-in (talk
   over FORGE and it stops within ~200 ms and re-listens).
-- **Sees** — the live camera feed (OBS Virtual Camera streaming a CNC clip) is read at
+- **Sees** — the live camera feed (a CNC clip loaded as the console's video-file vision source) is read at
   1 fps, gated on the Field Advisor; reads spindle/tool engagement, gauges, nameplates,
   error codes. Optional screen-share for on-screen SCADA dashboards.
 - **Acts** — pulls schematics and navigates to a labeled component ("jump to the
@@ -79,8 +79,8 @@ hallucinated part number, torque value, or safety step impossible.
   **AI4I 2020** milling dataset, so alerts reflect actual failure physics.
 
 ### Presentation & Documentation — 15%
-- Fully demoable on a laptop: the CNC clip is streamed in as the "camera" via OBS
-  Virtual Camera — no real machine required.
+- Fully demoable on a laptop: the console loads the CNC clip directly as its video-file
+  vision source (a real webcam and an OBS Virtual Camera route also work) — no real machine required.
 - Architecture diagram (Mermaid + exported SVG), a shot-by-shot
   [demo script](DEMO_SCRIPT.md), a [build blog](BLOG.md), full data attribution
   ([DATA_SOURCES.md](../DATA_SOURCES.md)), and an Alibaba Cloud

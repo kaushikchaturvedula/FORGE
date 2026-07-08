@@ -7,9 +7,11 @@ Cloud (a realtime voice agent plus an async qwen-plus diagnosis agent), on Aliba
 ## Setup (before recording)
 
 1. Start the backend (real `DASHSCOPE_API_KEY` in `backend/.env`) and the frontend.
-2. In **OBS Studio**, add the **CC BY 3.0 CNC clip** (CNCBUL, YouTube —
-   `datasets/cnc2.mp4`) as a looping media source, **Start Virtual
-   Camera**. In the Field Vision panel's device picker, select **OBS Virtual Camera**.
+2. In the **Field Vision** panel, toggle **👁 Vision** on, click **🎞 Video file**, then
+   **"Choose a CNC clip…"** and select the bundled **CC BY 3.0 CNC clip** (CNCBUL, YouTube —
+   `datasets/cnc2.mp4`) — the console streams it directly as the vision source (no camera or
+   OBS needed). *(Optional: load the clip in **OBS Studio**, **Start Virtual Camera**, switch to
+   **📷 Camera** mode, and pick that device in the picker.)*
 3. Open the console full-screen (dark theme). Have the **agent routing chips**,
    **transcript**, and **tool metrics** visible in the HUD rail.
 4. Press **Talk**. Speak naturally; let FORGE finish or barge in to show interruption.

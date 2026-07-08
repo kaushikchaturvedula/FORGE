@@ -21,9 +21,9 @@ UCI Machine Learning Repository. https://doi.org/10.24432/C5HS5C — licensed CC
 
 ---
 
-## Operating video — the "live feed" (via OBS Virtual Camera)
+## Operating video — the "live feed" (console video-file source)
 
-Operating video — "KAFO KA-24A CNC Vertical Machining Center - Year 2020" by CNCBUL Perman Machinery Investment Consultancy Ltd, from YouTube (https://www.youtube.com/watch?v=3L4-WhSYx9s), licensed CC BY 3.0 (https://creativecommons.org/licenses/by/3.0/). Used as a simulated live feed (cnc2.mp4) via OBS Virtual Camera. Modification: format-converted to mp4 only; no trimming, clipping, or content changes. Attribution: CNCBUL Perman Machinery Investment Consultancy Ltd.
+Operating video — "KAFO KA-24A CNC Vertical Machining Center - Year 2020" by CNCBUL Perman Machinery Investment Consultancy Ltd, from YouTube (https://www.youtube.com/watch?v=3L4-WhSYx9s), licensed CC BY 3.0 (https://creativecommons.org/licenses/by/3.0/). Used as a simulated live feed (cnc2.mp4), loaded directly as the console's video-file vision source (an OBS Virtual Camera route is also supported). Modification: format-converted to mp4 only; no trimming, clipping, or content changes. Attribution: CNCBUL Perman Machinery Investment Consultancy Ltd.
 
 ---
 
