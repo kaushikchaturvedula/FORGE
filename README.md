@@ -16,7 +16,7 @@
 
 ## The problem
 
-Industrial downtime on a CNC machining center costs **hundreds of thousands of dollars
+Unplanned downtime across manufacturing runs into **hundreds of thousands of dollars
 per hour**. The technicians who fix these machines work with **both hands occupied**,
 often gloved, in noisy environments — they cannot type or click. And the field
 reports that drive compliance and the next shift's work are written **from memory,
