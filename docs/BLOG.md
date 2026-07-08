@@ -6,7 +6,7 @@
 code snippets, screenshots, and the demo GIF.*
 
 ## 1. The problem worth solving
-- CNC downtime at thousands of dollars per minute; field reports written from memory.
+- CNC downtime at hundreds of thousands of dollars per hour; field reports written from memory.
 - The technician constraint: both hands occupied, gloved, noisy. No typing, no clicking.
 - The thesis: a realtime omni model can *listen, see, act, and speak at once* — which is
   exactly the shape of field service.

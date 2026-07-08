@@ -24,9 +24,10 @@ hours later**, full of gaps.
 
 The scale, in numbers:
 
-- Unplanned downtime averages **~$260,000/hour** across manufacturing — roughly **50% higher than in 2019** ([Aberdeen Group / Siemens, via info2soft](https://www.info2soft.com/blogs/unplanned-downtime-cost-2026-updated.html)).
-- **61%** of manufacturers were hit by unplanned downtime in the past year, costing the sector **up to $852M/week** ([Fluke Corporation](https://www.globenewswire.com/news-release/2025/10/30/3177330/0/en/Unplanned-Downtime-Costs-Manufacturers-Up-to-852M-Weekly-Exposing-Critical-Vulnerabilities-in-Industrial-Resilience.html)).
-- Field service fixes only **~80%** of issues on the first visit — about **1 in 5** trips doesn't ([Comparesoft](https://comparesoft.com/field-service-management-software/first-time-fix-rate-ftfr/) · [ServiceTitan](https://www.servicetitan.com/blog/field-service-metrics)).
+- Unplanned downtime averages **~$260,000/hour** across manufacturing (cross-sector average) — roughly **50% higher than in 2019** ([Aberdeen Group / Siemens, via info2soft](https://www.info2soft.com/blogs/unplanned-downtime-cost-2026-updated.html)).
+- **61%** of manufacturers were hit by unplanned downtime in the past year, costing the sector **up to $852M/week** ([Fluke Corporation](https://www.globenewswire.com/news-release/2025/10/30/3177330/0/en/Unplanned-Downtime-Costs-Manufacturers-Up-to-852M-Weekly-Exposing-Critical-Vulnerabilities-in-Industrial-Resilience.html) — Censuswide survey, 600+ decision-makers, US/UK/Germany).
+- Roughly **1 in 4** service visits fails to fix the problem on the first trip — and in **industrial machinery**, FORGE's exact domain, it's nearly **3 in 10**. First-time-fix rates sit at **76–77%** across field service ([Aquant 2024 Field Service Benchmark Report](https://21176235.fs1.hubspotusercontent-na1.net/hubfs/21176235/ebook-2024-benchmarkreport-12-19.pdf) — all-industry median 76%, industrial-machinery median **71.9%**; Service Council ~77% via [ServicePower](https://www.servicepower.com/blog/top-3-field-service-metrics)).
+- **~75%** of field technicians say they spend too much time on paperwork ([Skedulo](https://www.skedulo.com/blog/workforce-utilization-in-field-service/), citing Service Council's *Voice of the Field Service Engineer*, 2021) — so the reports that drive compliance and the next shift's work get written from memory, hours later.
 - And a co-pilot that *confidently hallucinates* a torque spec or part number doesn't save time — it destroys a spindle. Trustworthiness is the whole ballgame.
 
 ## The product
