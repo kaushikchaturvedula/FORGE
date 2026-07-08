@@ -70,9 +70,10 @@ hallucinated part number, torque value, or safety step impossible.
   is best at, neither blocking the other.
 
 ### Problem Value & Impact — 25%
-- Unplanned CNC downtime costs **thousands of dollars per minute**, and field reports
+- Unplanned CNC downtime costs **hundreds of thousands of dollars per hour**, and field reports
   are notoriously **written from memory hours later**. FORGE attacks both: real-time
   guidance to fix faster, and documentation captured *as the job happens*.
+- The evidence: unplanned downtime averages **~$260,000/hour** across manufacturing (~50% higher than 2019) ([Aberdeen/Siemens, via info2soft](https://www.info2soft.com/blogs/unplanned-downtime-cost-2026-updated.html)); **61%** of manufacturers were hit in the past year, up to **$852M/week** sector-wide ([Fluke](https://www.globenewswire.com/news-release/2025/10/30/3177330/0/en/Unplanned-Downtime-Costs-Manufacturers-Up-to-852M-Weekly-Exposing-Critical-Vulnerabilities-in-Industrial-Resilience.html)); and field service fixes only **~80%** first-visit — about **1 in 5** trips doesn't ([Comparesoft](https://comparesoft.com/field-service-management-software/first-time-fix-rate-ftfr/) · [ServiceTitan](https://www.servicetitan.com/blog/field-service-metrics)). A co-pilot that confidently hallucinates a torque spec doesn't save time — it destroys a spindle; trustworthiness is the whole ballgame.
 - Obvious productization path (head-cam + phone), and the grounding model generalizes to
   any asset class with a spec catalog. Telemetry/thresholds are driven by the real
   **AI4I 2020** milling dataset, so alerts reflect actual failure physics.
