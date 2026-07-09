@@ -4,6 +4,8 @@ The realtime bridge needs persistent WebSocket connections up to ~120 minutes, s
 FORGE deploys to **ECS** (full control of proxy timeouts) rather than SAE/Function
 Compute. This folder holds the runtime manifests.
 
+> Note: these nginx + Compose manifests are the reproducible deploy path; the externally verified Jul 6, 2026 demo ran the same backend via **uvicorn behind Caddy** (automatic Let's Encrypt TLS) — see deploy/ALIBABA_CLOUD_PROOF.md.
+
 ## Prerequisites
 
 - An Alibaba Cloud account with **OSS**, **ACR**, and **ECS** enabled.
@@ -39,10 +41,15 @@ sudo apt-get update && sudo apt-get install -y docker.io docker-compose-plugin
 sudo mkdir -p /opt/forge && cd /opt/forge
 # copy deploy/ecs/docker-compose.yml and deploy/ecs/nginx.conf here, plus a .env:
 cat > .env <<'ENV'
-ACR_REGISTRY=...; ACR_NAMESPACE=...; TAG=latest
+ACR_REGISTRY=...
+ACR_NAMESPACE=...
+TAG=latest
 DASHSCOPE_API_KEY=...
-ALIBABA_CLOUD_ACCESS_KEY_ID=...; ALIBABA_CLOUD_ACCESS_KEY_SECRET=...
-OSS_BUCKET=forge-assets; OSS_ENDPOINT=https://oss-ap-southeast-1.aliyuncs.com; OSS_REGION=ap-southeast-1
+ALIBABA_CLOUD_ACCESS_KEY_ID=...
+ALIBABA_CLOUD_ACCESS_KEY_SECRET=...
+OSS_BUCKET=forge-assets
+OSS_ENDPOINT=https://oss-ap-southeast-1.aliyuncs.com
+OSS_REGION=ap-southeast-1
 FORGE_ALLOWED_ORIGINS=https://your-domain
 ENV
 docker login $ACR_REGISTRY -u $ACR_USERNAME --password-stdin <<< "$ACR_PASSWORD"

@@ -133,7 +133,7 @@ backend/    FastAPI WebSocket gateway, realtime session, agents, tools, groundin
 frontend/   React + Vite + TypeScript + Tailwind field console (panels + HUD)
 docs/       architecture · SUBMISSION · DEMO_SCRIPT · BLOG
 deploy/     ALIBABA_CLOUD_PROOF · ECS manifests
-datasets/   source data on disk (AI4I CSV bundled; test videos gitignored)
+datasets/   source data on disk (AI4I CSV + the CNC demo clip cnc2.mp4 bundled; other test videos gitignored)
 ```
 
 ---

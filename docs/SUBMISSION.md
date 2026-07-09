@@ -16,7 +16,7 @@ Alibaba Cloud.
 
 It runs as **one `qwen-omni-realtime` bidirectional session** doing audio in/out +
 function calling + live image streaming at once, with server-side **per-tool specialist
-attribution** (ten roles via the `TOOL_AGENT` map) and a **grounding layer** that makes a
+attribution** (routing chips driven by the `TOOL_AGENT` map, across the ten roles — orchestrator + eight domain specialists + a Field Advisor — defined in the `AGENTS` registry) and a **grounding layer** that makes a
 hallucinated part number, torque value, or safety step impossible.
 
 ## What it does (functionality)
@@ -97,7 +97,7 @@ hallucinated part number, torque value, or safety step impossible.
 
 ## Requirement checklist
 
-- [x] Qwen models on Qwen Cloud — entire AI core on `qwen-omni-realtime` via DashScope.
+- [x] Qwen models on Qwen Cloud — realtime voice/vision/tools on `qwen-omni-realtime` plus async diagnosis on `qwen-plus`, both via DashScope.
 - [x] Backend on Alibaba Cloud — ECS (persistent WebSockets); image in ACR; assets in OSS.
 - [x] Deployment proof — [`cloud/alibaba.py`](../backend/app/cloud/alibaba.py) (oss2 +
       `/cloud/health`) and [`ALIBABA_CLOUD_PROOF.md`](../deploy/ALIBABA_CLOUD_PROOF.md).

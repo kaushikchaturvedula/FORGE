@@ -48,7 +48,7 @@ Operating video — "KAFO KA-24A CNC Vertical Machining Center - Year 2020" by C
 | Source | License | Use in FORGE |
 |---|---|---|
 | **FORGE-generated SVG schematics** (`backend/app/data/schematics/*.svg`) | Apache 2.0 (this repo) | Hand-built labeled diagrams of the spindle, turret, and axes. Component `id`s exactly match `navigate_schematic` targets — more reliable for the demo than scraped diagrams. |
-| **FORGE-generated overview "Machine Map"** (`frontend/public/schematics/cnc_turnmill_overview.svg`) | Apache 2.0 (this repo) | Whole-machine schematic; each part is a `<g id="cmp-…">`. It is the **voice-driven highlight surface**: when FORGE names a component, the gateway resolves it via `backend/app/data/hotspots.json` and `highlight_component` pulses the matching group. (The 3D GLB is a fused mesh, so per-part highlighting lives on this SVG.) |
+| **FORGE-generated overview "Machine Map"** (`frontend/public/schematics/cnc_turnmill_overview.svg`) | Apache 2.0 (this repo) | Whole-machine schematic; each part is a `<g id="cmp-…">`. It is the **voice-driven highlight surface**: when FORGE calls the `highlight_component` tool with a component name, the handler resolves it via `backend/app/data/hotspots.json` and the frontend pulses the matching group (only on that explicit tool call — never from FORGE's own spoken transcript). (The 3D GLB is a fused mesh, so per-part highlighting lives on this SVG.) |
 
 ---
 

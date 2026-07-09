@@ -23,6 +23,7 @@ datasets/*.ogv
 *.mkv
 *.webm
 # Allow the submission-safe CNCBUL YouTube clip (cnc2.mp4) if explicitly placed here:
+!datasets/cnc2.mp4
 !docs/assets/*.ogv
 
 # ─────────────────────────────────────────────────────────────────────────────

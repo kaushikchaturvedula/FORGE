@@ -139,8 +139,10 @@ compressed context summary.
 
 **Audio.** Input is 16 kHz mono PCM (browser AudioWorklet); output is **24 kHz** PCM16
 (Qwen) played with a small jitter buffer that drains instantly on a server
-speech-started event (barge-in). Turn-taking and interruption are handled by Qwen
-**server VAD + semantic interruption** — no custom VAD.
+speech-started event (barge-in). Turn-taking and interruption are handled by Qwen **server VAD** (threshold +
+silence-duration) plus the **client-side barge-in drain** on a server speech-started
+event; semantic VAD is a configurable alternative (qwen3.5+), not the shipped default —
+no custom VAD.
 
 **Alibaba Cloud.** ECS hosts the long-lived WebSocket (full control of proxy timeouts);
 OSS stores the large assets and doubles as deployment proof via
