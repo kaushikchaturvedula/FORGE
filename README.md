@@ -200,7 +200,7 @@ and judging-criteria mapping in **[docs/SUBMISSION.md](docs/SUBMISSION.md)**; de
 script in **[docs/DEMO_SCRIPT.md](docs/DEMO_SCRIPT.md)**; deployment proof in
 **[deploy/ALIBABA_CLOUD_PROOF.md](deploy/ALIBABA_CLOUD_PROOF.md)**.
 
-Demo video: https://youtu.be/m1AlPu2-fqo · Repository: https://github.com/kaushikchaturvedula/FORGE · Build journey (blog): https://medium.com/@kaushikchaturvedula/building-forge-a-voice-co-pilot-that-sees-the-machine-9a702b4c2147
+Demo video: https://youtu.be/ifMU-fvNbVk · Repository: https://github.com/kaushikchaturvedula/FORGE · Build journey (blog): https://medium.com/@kaushikchaturvedula/building-forge-a-voice-co-pilot-that-sees-the-machine-9a702b4c2147
 
 ## License
 

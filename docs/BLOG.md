@@ -79,4 +79,4 @@ code snippets, screenshots, and the demo GIF.*
 ## 11. Try it
 - Repo, demo video, and the one command that starts it all.
 
-Demo video: https://youtu.be/m1AlPu2-fqo · Repository: https://github.com/kaushikchaturvedula/FORGE
+Demo video: https://youtu.be/ifMU-fvNbVk · Repository: https://github.com/kaushikchaturvedula/FORGE
