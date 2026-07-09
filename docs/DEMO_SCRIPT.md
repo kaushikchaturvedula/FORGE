@@ -20,7 +20,7 @@ Cloud (a realtime voice agent plus an async qwen-plus diagnosis agent), on Aliba
 
 ## Demo command script
 
-Demo command flow — the ~3-minute demo video (https://youtu.be/ifMU-fvNbVk) presents a tight cut of this sequence; every command was exercised live in one continuous session.
+The ~3-minute demo video (https://youtu.be/ifMU-fvNbVk) presents a tight cut of this sequence; every command was exercised live in one continuous session.
 
 1. Hey FORGE, here's a live feed of the PL45 LM — walk me through what you're seeing.
 2. Brief me on this machine and pull up any open faults.

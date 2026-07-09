@@ -33,7 +33,7 @@ flowchart TB
   subgraph BACKEND["FastAPI backend — Alibaba Cloud ECS (Docker image from ACR)"]
     GW["WS gateway — dual async pumps<br/>4 s tool-call dedup · session resumption"]:::back
     INTENT["Transcript signals — machine-switch detect<br/>dims header · clears stale hero data"]:::back
-    ORCH["Orchestrator + TOOL_AGENT map<br/>per-tool routing to 10 specialist roles → HUD chips"]:::back
+    ORCH["Orchestrator + TOOL_AGENT map<br/>per-tool routing → HUD specialist chips (10 roles in the AGENTS registry)"]:::back
     GROUND["Grounding gate — argument whitelists<br/>tool-only facts → spoken 'not on file' rejection"]:::back
     AUTO["Autopilot — server-sequenced diagnosis workflow<br/>LOTO checklist state machine, human-confirm gates<br/>proactive AI4I threshold alerts"]:::back
   end
