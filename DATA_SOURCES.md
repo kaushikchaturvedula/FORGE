@@ -1,6 +1,6 @@
 # Data Sources & Attribution
 
-FORGE is grounded in real, openly-licensed data, distilled into the bundled catalogs
+FORGE is grounded in real, openly-licensed and public-domain data — plus a few manufacturer/community references used **as reference only** and re-authored — distilled into the bundled catalogs
 the agent reads from. The **only** runtime network calls are to Qwen (DashScope) and
 Alibaba Cloud OSS — no live spec, manual, or dataset API is called at runtime.
 
@@ -31,9 +31,9 @@ Operating video — "KAFO KA-24A CNC Vertical Machining Center - Year 2020" by C
 
 | Source | Link | License / Status | Use in FORGE |
 |---|---|---|---|
-| **Artisans Asylum — M3X CNC Milling Machine** | [wiki.artisansasylum.com](https://wiki.artisansasylum.com/wiki/M3X_CNC_Milling_Machine) | CC-licensed wiki | Reference for startup/shutdown/tool-change workflow shape, distilled into `procedures.json`. |
-| **Haas Mill Operator's Manual** | [diy.haascnc.com](https://diy.haascnc.com) | Manufacturer doc (free) | Reference for warm-up, tool-change, and maintenance practice. Re-authored, not quoted. |
-| **Tormach documentation** | [tormach.com](https://www.tormach.com) | Manufacturer doc (free) | Reference for mill maintenance/spec conventions. Re-authored, not quoted. |
+| **Artisans Asylum — M3X CNC Milling Machine** | [wiki.artisansasylum.com](https://wiki.artisansasylum.com/wiki/M3X_CNC_Milling_Machine) | CC BY-NC-SA 4.0 (reference only) | Reference for startup/shutdown/tool-change workflow shape, distilled into `procedures.json`. |
+| **Haas Mill Operator's Manual** | [diy.haascnc.com](https://diy.haascnc.com) | Copyrighted manual · free to access (reference only) | Reference for warm-up, tool-change, and maintenance practice. Re-authored, not quoted. |
+| **Tormach documentation** | [tormach.com](https://www.tormach.com) | Copyrighted manual · free to access (reference only) | Reference for mill maintenance/spec conventions. Re-authored, not quoted. |
 | **OSHA 29 CFR 1910.147 (Lockout/Tagout) + machine-shop PPE practice** | [osha.gov/.../1910.147](https://www.osha.gov/laws-regs/regulations/standardnumber/1910/1910.147) | US federal regulation — **public domain** | Basis for `safety.json` (LOTO, PPE, pre-start checklists), distilled into structured, confirm-gated items. No regulatory text reproduced verbatim. |
 
 > The values in `parts.json` (part numbers, torque figures, clamp forces) and
@@ -71,7 +71,7 @@ Modification: model used in GLB (glTF binary) format; format conversion only —
 
 - **AI4I 2020 dataset** → CC BY 4.0 (bundled).
 - **CNCBUL CNC clip (YouTube)** → CC BY 3.0 (simulated live feed, cnc2.mp4).
-- **Artisans Asylum wiki** → CC (reference).
+- **Artisans Asylum wiki** → CC BY-NC-SA 4.0 (reference only; re-authored, not reproduced).
 - **OSHA 1910.147 (LOTO) + machine-shop PPE practice** → US federal regulation, public domain (basis for `safety.json`, re-authored).
-- **Haas / Tormach manuals** → manufacturer docs (reference only).
+- **Haas / Tormach manuals** → copyrighted manufacturer manuals, free to access (reference only; re-authored).
 - **FORGE code, schematics, and authored JSON** → Apache 2.0 (this repo).
