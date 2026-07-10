@@ -1,5 +1,5 @@
 {
-  "_comment": "FORGE asset registry. Synthetic, modeled on a Samsung PL45LM-class turn-mill (CNC vertical machining center / turn-mill). Telemetry rows and thresholds are derived from the AI4I 2020 Predictive Maintenance dataset (CC BY 4.0); see DATA_SOURCES.md. No real Samsung/Fanuc data is reproduced.",
+  "_comment": "FORGE asset registry. Synthetic, modeled on a commercial PL45LM-class turn-mill (CNC vertical machining center / turn-mill). Telemetry rows and thresholds are derived from the AI4I 2020 Predictive Maintenance dataset (CC BY 4.0); see DATA_SOURCES.md. No real OEM data is reproduced.",
   "machines": {
     "PL45LM-01": {
       "asset_id": "PL45LM-01",
@@ -8,7 +8,7 @@
         "model": "PL45LM Turn-Mill",
         "machine_class": "CNC vertical machining center / turn-mill",
         "serial_number": "SYN-PL45LM-2026-0142",
-        "control": "Fanuc-class CNC control (synthetic profile)",
+        "control": "Commercial-class CNC control (synthetic profile)",
         "year": 2022,
         "asset_tag": "PL45LM-01",
         "location": "Bay 3, Cell A — primary production line"
